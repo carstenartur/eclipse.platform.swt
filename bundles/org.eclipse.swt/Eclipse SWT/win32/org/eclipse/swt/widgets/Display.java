@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2020 IBM Corporation and others.
+ * Copyright (c) 2000, 2022 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -10,11 +10,13 @@
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
+ *     Christoph Läubrich - Issue #64 - Integration with java.util.concurrent framework
  *******************************************************************************/
 package org.eclipse.swt.widgets;
 
 import java.net.*;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.function.*;
 
 import org.eclipse.swt.*;
@@ -102,7 +104,7 @@ import org.eclipse.swt.internal.win32.*;
  * @see <a href="http://www.eclipse.org/swt/">Sample code and further information</a>
  * @noextend This class is not intended to be subclassed by clients.
  */
-public class Display extends Device {
+public class Display extends Device implements Executor {
 
 	/**
 	 * the handle to the OS message queue
@@ -137,13 +139,8 @@ public class Display extends Device {
 	boolean externalEventLoop; // events are dispatched outside SWT, e.g. TrackPopupMenu or DoDragDrop
 
 	/* Widget Table */
-	int freeSlot;
-	int [] indexTable;
-	Control lastControl, lastGetControl;
-	long lastHwnd, lastGetHwnd;
-	Control [] controlTable;
+	private Map<Long, Control> controlByHandle;
 	static final int GROW_SIZE = 1024;
-	static final int SWT_OBJECT_INDEX = OS.GlobalAddAtom (new TCHAR (0, "SWT_OBJECT_INDEX", true)); //$NON-NLS-1$
 
 	/* Startup info */
 	static STARTUPINFO lpStartupInfo;
@@ -355,7 +352,7 @@ public class Display extends Device {
 	Point scrollRemainderEvt = new Point(0, 0);
 	Point scrollRemainderBar = new Point(0, 0);
 	int lastKey, lastMouse, lastAscii;
-	boolean lastVirtual, lastNull, lastDead;
+	boolean lastVirtual, lastDead;
 	byte [] keyboard = new byte [256];
 	boolean accelKeyHit, mnemonicKeyHit;
 	boolean lockActiveWindow, captureChanged, xMouse;
@@ -601,25 +598,9 @@ void addBar (Menu menu) {
 	}
 	bars [index] = menu;
 }
-
 void addControl (long handle, Control control) {
 	if (handle == 0) return;
-	if (freeSlot == -1) {
-		int length = (freeSlot = indexTable.length) + GROW_SIZE;
-		int [] newIndexTable = new int [length];
-		Control [] newControlTable = new Control [length];
-		System.arraycopy (indexTable, 0, newIndexTable, 0, freeSlot);
-		System.arraycopy (controlTable, 0, newControlTable, 0, freeSlot);
-		for (int i=freeSlot; i<length-1; i++) newIndexTable [i] = i + 1;
-		newIndexTable [length - 1] = -1;
-		indexTable = newIndexTable;
-		controlTable = newControlTable;
-	}
-	OS.SetProp (handle, SWT_OBJECT_INDEX, freeSlot + 1);
-	int oldSlot = freeSlot;
-	freeSlot = indexTable [oldSlot];
-	indexTable [oldSlot] = -2;
-	controlTable [oldSlot] = control;
+	controlByHandle.put(handle, control);
 }
 
 void addSkinnableWidget (Widget widget) {
@@ -796,6 +777,49 @@ public void asyncExec (Runnable runnable) {
 }
 
 /**
+ * Executes the given runnable in the user-interface thread of this Display.
+ * <ul>
+ * <li>If the calling thread is the user-interface thread of this display it is
+ * executed immediately and the method returns after the command has run, as with
+ * the method {@link Display#syncExec(Runnable)}.</li>
+ * <li>In all other cases the <code>run()</code> method of the runnable is
+ * asynchronously executed as with the method
+ * {@link Display#asyncExec(Runnable)} at the next reasonable opportunity. The
+ * caller of this method continues to run in parallel, and is not notified when
+ * the runnable has completed.</li>
+ * </ul>
+ * <p>
+ * This can be used in cases where one want to execute some piece of code that
+ * should be guaranteed to run in the user-interface thread regardless of the
+ * current thread.
+ * </p>
+ *
+ * <p>
+ * Note that at the time the runnable is invoked, widgets that have the receiver
+ * as their display may have been disposed. Therefore, it is advised to check
+ * for this case inside the runnable before accessing the widget.
+ * </p>
+ *
+ * @param runnable the runnable to execute in the user-interface thread, never
+ *                 <code>null</code>
+ * @throws RejectedExecutionException if this task cannot be accepted for
+ *                                    execution
+ * @throws NullPointerException       if runnable is null
+ */
+@Override
+public void execute(Runnable runnable) {
+	Objects.requireNonNull(runnable);
+	if (isDisposed()) {
+		throw new RejectedExecutionException(new SWTException (SWT.ERROR_WIDGET_DISPOSED, null));
+	}
+	if (thread == Thread.currentThread()) {
+		syncExec(runnable);
+	} else {
+		asyncExec(runnable);
+	}
+}
+
+/**
  * Causes the system hardware to emit a short sound
  * (if it supports this capability).
  *
@@ -860,7 +884,7 @@ void clearModal (Shell shell) {
 }
 
 int controlKey (int key) {
-	int upper = (int)OS.CharUpper ((short) key);
+	int upper = (int)OS.CharUpper (OS.LOWORD (key));
 	if (64 <= upper && upper <= 95) return upper & 0xBF;
 	return key;
 }
@@ -1279,7 +1303,7 @@ boolean filterMessage (MSG msg) {
 		if (control != null) {
 			if (translateAccelerator (msg, control) || translateMnemonic (msg, control) || translateTraversal (msg, control)) {
 				lastAscii = lastKey = 0;
-				lastVirtual = lastNull = lastDead = false;
+				lastVirtual = lastDead = false;
 				return true;
 			}
 		}
@@ -1598,19 +1622,8 @@ Rectangle getClientAreaInPixels () {
 }
 
 Control getControl (long handle) {
-	if (handle == 0) return null;
-	if (lastControl != null && lastHwnd == handle) {
-		return lastControl;
-	}
-	if (lastGetControl != null && lastGetHwnd == handle) {
-		return lastGetControl;
-	}
-	int index = (int)OS.GetProp (handle, SWT_OBJECT_INDEX) - 1;
-	if (0 <= index && index < controlTable.length) {
-		lastGetHwnd = handle;
-		return lastGetControl = controlTable [index];
-	}
-	return null;
+	Control control = controlByHandle.get(handle);
+	return control;
 }
 
 /**
@@ -1695,11 +1708,7 @@ protected int getDeviceZoom() {
 	 * Win8.1 and above we should pick zoom for the primary monitor which always
 	 * reflects the latest OS zoom value, for more details refer bug 537273.
 	 */
-	if (OS.WIN32_VERSION >= OS.VERSION (6, 3)) {
-		return getPrimaryMonitor().getZoom();
-	}
-	/* Otherwise return Windows zoom level, as set during session login. */
-	return super.getDeviceZoom();
+	return getPrimaryMonitor().getZoom();
 }
 
 static boolean isValidClass (Class<?> clazz) {
@@ -2132,19 +2141,15 @@ Monitor getMonitor (long hmonitor) {
 	monitor.setBounds (DPIUtil.autoScaleDown (boundsInPixels));
 	Rectangle clientAreaInPixels = new Rectangle (lpmi.rcWork_left, lpmi.rcWork_top, lpmi.rcWork_right - lpmi.rcWork_left, lpmi.rcWork_bottom - lpmi.rcWork_top);
 	monitor.setClientArea (DPIUtil.autoScaleDown (clientAreaInPixels));
-	if (OS.WIN32_VERSION >= OS.VERSION (6, 3)) {
-		int [] dpiX = new int[1];
-		int [] dpiY = new int[1];
-		int result = OS.GetDpiForMonitor (monitor.handle, OS.MDT_EFFECTIVE_DPI, dpiX, dpiY);
-		result = (result == OS.S_OK) ? DPIUtil.mapDPIToZoom (dpiX[0]) : 100;
-		/*
-		 * Always return true monitor zoom value as fetched from native, else will lead
-		 * to scaling issue on OS Win8.1 and above, for more details refer bug 537614.
-		 */
-		monitor.zoom = result;
-	} else {
-		monitor.zoom = getDeviceZoom ();
-	}
+	int [] dpiX = new int[1];
+	int [] dpiY = new int[1];
+	int result = OS.GetDpiForMonitor (monitor.handle, OS.MDT_EFFECTIVE_DPI, dpiX, dpiY);
+	result = (result == OS.S_OK) ? DPIUtil.mapDPIToZoom (dpiX[0]) : 100;
+	/*
+	 * Always return true monitor zoom value as fetched from native, else will lead
+	 * to scaling issue on OS Win8.1 and above, for more details refer bug 537614.
+	 */
+	monitor.zoom = result;
 	return monitor;
 }
 
@@ -2245,7 +2250,7 @@ public Shell [] getShells () {
 	checkDevice ();
 	int index = 0;
 	Shell [] result = new Shell [16];
-	for (Control control : controlTable) {
+	for (Control control : controlByHandle.values()) {
 		if (control instanceof Shell) {
 			int j = 0;
 			while (j < index) {
@@ -2541,16 +2546,14 @@ public Menu getSystemMenu () {
 public TaskBar getSystemTaskBar () {
 	checkDevice ();
 	if (taskBar != null) return taskBar;
-	if (OS.WIN32_VERSION >= OS.VERSION (6, 1)) {
-		try {
-			taskBar = new TaskBar (this, SWT.NONE);
-		} catch (SWTError e) {
-			if (e.code == SWT.ERROR_NOT_IMPLEMENTED) {
-				// Windows Server Core doesn't have a Taskbar
-				return null;
-			}
-			throw e;
+	try {
+		taskBar = new TaskBar (this, SWT.NONE);
+	} catch (SWTError e) {
+		if (e.code == SWT.ERROR_NOT_IMPLEMENTED) {
+			// Windows Server Core doesn't have a Taskbar
+			return null;
 		}
+		throw e;
 	}
 	return taskBar;
 }
@@ -2730,23 +2733,23 @@ public long internal_new_GC (GCData data) {
  */
 @Override
 protected void init () {
-	this.synchronizer = new Synchronizer (this); // Field initialization happens after super constructor
+	// Field initialization happens after super constructor
+	controlByHandle = new HashMap<>();
+	this.synchronizer = new Synchronizer (this);
 	super.init ();
 	DPIUtil.setDeviceZoom (getDeviceZoom ());
 
 	/* Set the application user model ID, if APP_NAME is non Default */
 	char [] appName = null;
 	if (APP_NAME != null && !"SWT".equalsIgnoreCase (APP_NAME)) {
-		if (OS.WIN32_VERSION >= OS.VERSION (6, 1)) {
-			int length = APP_NAME.length ();
-			appName = new char [length + 1];
-			APP_NAME.getChars (0, length, appName, 0);
-			long [] appID = new long [1];
-			if (OS.GetCurrentProcessExplicitAppUserModelID(appID) != 0) {
-				OS.SetCurrentProcessExplicitAppUserModelID (appName);
-			}
-			if (appID[0] != 0) OS.CoTaskMemFree(appID[0]);
+		int length = APP_NAME.length ();
+		appName = new char [length + 1];
+		APP_NAME.getChars (0, length, appName, 0);
+		long [] appID = new long [1];
+		if (OS.GetCurrentProcessExplicitAppUserModelID(appID) != 0) {
+			OS.SetCurrentProcessExplicitAppUserModelID (appName);
 		}
+		if (appID[0] != 0) OS.CoTaskMemFree(appID[0]);
 	}
 
 	/* Create the callbacks */
@@ -2831,12 +2834,6 @@ protected void init () {
 
 	/* Initialize buffered painting */
 	OS.BufferedPaintInit ();
-
-	/* Initialize the Widget Table */
-	indexTable = new int [GROW_SIZE];
-	controlTable = new Control [GROW_SIZE];
-	for (int i=0; i<GROW_SIZE-1; i++) indexTable [i] = i + 1;
-	indexTable [GROW_SIZE - 1] = -1;
 }
 
 /**
@@ -3847,10 +3844,8 @@ void releaseDisplay () {
 	keys = null;
 	values = null;
 	bars = popups = null;
-	indexTable = null;
 	timerIds = null;
-	controlTable = null;
-	lastControl = lastGetControl = lastHittestControl = null;
+	lastHittestControl = null;
 	imageList = toolImageList = toolHotImageList = toolDisabledImageList = null;
 	timerList = null;
 	tableBuffer = null;
@@ -4011,16 +4006,7 @@ void removeBar (Menu menu) {
 }
 
 Control removeControl (long handle) {
-	if (handle == 0) return null;
-	lastControl = lastGetControl = null;
-	Control control = null;
-	int index = (int)OS.RemoveProp (handle, SWT_OBJECT_INDEX) - 1;
-	if (0 <= index && index < controlTable.length) {
-		control = controlTable [index];
-		controlTable [index] = null;
-		indexTable [index] = freeSlot;
-		freeSlot = index;
-	}
+	Control control = controlByHandle.remove(handle);
 	return control;
 }
 
@@ -4231,6 +4217,25 @@ void saveResources () {
 	}
 }
 
+private void sendJDKInternalEvent(int eventType) {
+	sendJDKInternalEvent(eventType, 0);
+}
+/** does sent event with JDK time**/
+private void sendJDKInternalEvent(int eventType, int detail) {
+	if (eventTable == null || !eventTable.hooks (eventType)) {
+		return;
+	}
+	Event event = new Event ();
+	event.detail = detail;
+	event.display = this;
+	event.type = eventType;
+	// time is set for debugging purpose only:
+	event.time = (int) (System.nanoTime() / 1000_000L);
+	if (!filterEvent (event)) {
+		sendEvent (eventTable, event);
+	}
+}
+
 void sendEvent (int eventType, Event event) {
 	if (eventTable == null && filterTable == null) {
 		return;
@@ -4258,11 +4263,7 @@ void sendPreEvent (int eventType) {
 	if (eventType != SWT.PreEvent && eventType != SWT.PostEvent
 			&& eventType != SWT.PreExternalEventDispatch
 			&& eventType != SWT.PostExternalEventDispatch) {
-		if (eventTable != null && eventTable.hooks (SWT.PreEvent)) {
-			Event event = new Event ();
-			event.detail = eventType;
-			sendEvent (SWT.PreEvent, event);
-		}
+		sendJDKInternalEvent (SWT.PreEvent, eventType);
 	}
 }
 
@@ -4270,11 +4271,7 @@ void sendPostEvent (int eventType) {
 	if (eventType != SWT.PreEvent && eventType != SWT.PostEvent
 			&& eventType != SWT.PreExternalEventDispatch
 			&& eventType != SWT.PostExternalEventDispatch) {
-		if (eventTable != null && eventTable.hooks (SWT.PostEvent)) {
-			Event event = new Event ();
-			event.detail = eventType;
-			sendEvent (SWT.PostEvent, event);
-		}
+		sendJDKInternalEvent (SWT.PostEvent, eventType);
 	}
 }
 
@@ -4284,9 +4281,7 @@ void sendPostEvent (int eventType) {
  * @noreference This method is not intended to be referenced by clients.
  */
 public void sendPreExternalEventDispatchEvent () {
-	if (eventTable != null && eventTable.hooks (SWT.PreExternalEventDispatch)) {
-		sendEvent (SWT.PreExternalEventDispatch, null);
-	}
+	sendJDKInternalEvent (SWT.PreExternalEventDispatch);
 }
 
 /**
@@ -4295,9 +4290,7 @@ public void sendPreExternalEventDispatchEvent () {
  * @noreference This method is not intended to be referenced by clients.
  */
 public void sendPostExternalEventDispatchEvent () {
-	if (eventTable != null && eventTable.hooks (SWT.PostExternalEventDispatch)) {
-		sendEvent (SWT.PostExternalEventDispatch, null);
-	}
+	sendJDKInternalEvent (SWT.PostExternalEventDispatch);
 }
 
 /**
@@ -4590,10 +4583,12 @@ public static String getAppVersion () {
  * to any value other than "SWT" (case insensitive),
  * it is used to set the application user model ID
  * which is used by the OS for taskbar grouping.
- * @see <a href="http://msdn.microsoft.com/en-us/library/windows/desktop/dd378459%28v=vs.85%29.aspx#HOW">AppUserModelID (Windows)</a>
- * </p><p>
+ * </p>
+ * <p>
  * Specifying <code>null</code> for the name clears it.
  * </p>
+ *
+ * @see <a href="http://msdn.microsoft.com/en-us/library/windows/desktop/dd378459%28v=vs.85%29.aspx#HOW">AppUserModelID (Windows)</a>
  *
  * @param name the new app name or <code>null</code>
  */
@@ -5022,17 +5017,9 @@ void wakeThread () {
 }
 
 long windowProc (long hwnd, long msg, long wParam, long lParam) {
-	if (lastControl != null && lastHwnd == hwnd) {
-		return lastControl.windowProc (hwnd, (int)msg, wParam, lParam);
-	}
-	int index = (int)OS.GetProp (hwnd, SWT_OBJECT_INDEX) - 1;
-	if (0 <= index && index < controlTable.length) {
-		Control control = controlTable [index];
-		if (control != null) {
-			lastHwnd = hwnd;
-			lastControl = control;
-			return control.windowProc (hwnd, (int)msg, wParam, lParam);
-		}
+	Control control = getControl(hwnd);
+	if (control != null) {
+		return control.windowProc (hwnd, (int)msg, wParam, lParam);
 	}
 	return OS.DefWindowProc (hwnd, (int)msg, wParam, lParam);
 }

@@ -51,14 +51,12 @@ IF NOT EXIST "%MSVC_HOME%" (
 @rem Search for a usable JDK
 @rem -----------------------
 IF "%SWT_JAVA_HOME%"=="" CALL :ECHO "'SWT_JAVA_HOME' was not provided, auto-searching for JDK..."
-@rem Bug 572733: JDK path used on Azure build machines
-IF "%SWT_JAVA_HOME%"=="" CALL :TryToUseJdk "%ProgramFiles%\AdoptOpenJDK\jdk-8.0.292.10-hotspot"
-@rem Bug 526802: Probably some kind of legacy build machine path
-IF "%SWT_JAVA_HOME%"=="" CALL :TryToUseJdk "%SWT_BUILDDIR%\Java\Oracle\jdk1.8.0-latest\x64"
 @rem Search for generic JDKs so that user can build with little configuration
 @rem Note that first found JDK wins, so sort them by order of preference.
-IF "%SWT_JAVA_HOME%"=="" CALL :TryToUseJdk "%ProgramFiles%\Java\jdk*"
-IF "%SWT_JAVA_HOME%"=="" CALL :TryToUseJdk "%ProgramFiles%\AdoptOpenJDK\jdk*"
+IF "%SWT_JAVA_HOME%"=="" CALL :TryToUseJdk "%ProgramFiles%\Java\jdk-11*"
+IF "%SWT_JAVA_HOME%"=="" CALL :TryToUseJdk "%ProgramFiles%\AdoptOpenJDK\jdk-11*"
+IF "%SWT_JAVA_HOME%"=="" CALL :TryToUseJdk "%ProgramFiles%\Java\jdk-17*"
+IF "%SWT_JAVA_HOME%"=="" CALL :TryToUseJdk "%ProgramFiles%\AdoptOpenJDK\jdk-17*"
 @rem Report
 IF NOT EXIST "%SWT_JAVA_HOME%" (
     CALL :ECHO "WARNING: x64 Java JDK not found. Please set SWT_JAVA_HOME to your JDK directory."
@@ -88,6 +86,7 @@ if %ERRORLEVEL% NEQ 0 (
     CALL :ECHO "         Refer steps for SWT Windows native setup: https://www.eclipse.org/swt/swt_win_native.php"
 )
 nmake -f make_win32.mak %1 %2 %3 %4 %5 %6 %7 %8 %9
+IF ERRORLEVEL 1 EXIT 1
 GOTO :EOF
 
 @rem Find Visual Studio

@@ -24,6 +24,11 @@
 #define GDK_NATIVE(func) Java_org_eclipse_swt_internal_gtk_GDK_##func
 #endif
 
+#ifdef _WIN32
+  /* Many methods don't use their 'env' and 'that' arguments */
+  #pragma warning (disable: 4100)
+#endif
+
 #ifndef NO_GDK_1EVENT_1TYPE
 JNIEXPORT jint JNICALL GDK_NATIVE(GDK_1EVENT_1TYPE)
 	(JNIEnv *env, jclass that, jlong arg0)
@@ -3153,6 +3158,11 @@ JNIEXPORT jlong JNICALL GDK_NATIVE(gdk_1x11_1window_1lookup_1for_1display)
 
 #ifndef GTK_NATIVE
 #define GTK_NATIVE(func) Java_org_eclipse_swt_internal_gtk_GTK_##func
+#endif
+
+#ifdef _WIN32
+  /* Many methods don't use their 'env' and 'that' arguments */
+  #pragma warning (disable: 4100)
 #endif
 
 #ifndef NO_GET_1FUNCTION_1POINTER_1gtk_1false
@@ -10039,6 +10049,11 @@ JNIEXPORT void JNICALL GTK_NATIVE(gtk_1window_1unmaximize)
 #define Graphene_NATIVE(func) Java_org_eclipse_swt_internal_gtk_Graphene_##func
 #endif
 
+#ifdef _WIN32
+  /* Many methods don't use their 'env' and 'that' arguments */
+  #pragma warning (disable: 4100)
+#endif
+
 #ifndef NO_graphene_1rect_1alloc
 JNIEXPORT jlong JNICALL Graphene_NATIVE(graphene_1rect_1alloc)
 	(JNIEnv *env, jclass that)
@@ -10075,6 +10090,11 @@ JNIEXPORT jlong JNICALL Graphene_NATIVE(graphene_1rect_1init)
 
 #ifndef OS_NATIVE
 #define OS_NATIVE(func) Java_org_eclipse_swt_internal_gtk_OS_##func
+#endif
+
+#ifdef _WIN32
+  /* Many methods don't use their 'env' and 'that' arguments */
+  #pragma warning (disable: 4100)
 #endif
 
 #ifndef NO_Call__JJII
@@ -12336,7 +12356,7 @@ fail:
 
 #ifndef NO_g_1signal_1handler_1disconnect
 JNIEXPORT void JNICALL OS_NATIVE(g_1signal_1handler_1disconnect)
-	(JNIEnv *env, jclass that, jlong arg0, jint arg1)
+	(JNIEnv *env, jclass that, jlong arg0, jlong arg1)
 {
 	OS_NATIVE_ENTER(env, that, g_1signal_1handler_1disconnect_FUNC);
 	g_signal_handler_disconnect((gpointer)arg0, (gulong)arg1);
@@ -13010,10 +13030,14 @@ JNIEXPORT void JNICALL OS_NATIVE(g_1value_1set_1int64)
 
 #ifndef NO_g_1value_1set_1string
 JNIEXPORT void JNICALL OS_NATIVE(g_1value_1set_1string)
-	(JNIEnv *env, jclass that, jlong arg0, jlong arg1)
+	(JNIEnv *env, jclass that, jlong arg0, jbyteArray arg1)
 {
+	jbyte *lparg1=NULL;
 	OS_NATIVE_ENTER(env, that, g_1value_1set_1string_FUNC);
-	g_value_set_string((GValue *)arg0, (const gchar *)arg1);
+	if (arg1) if ((lparg1 = (*env)->GetByteArrayElements(env, arg1, NULL)) == NULL) goto fail;
+	g_value_set_string((GValue *)arg0, (const gchar *)lparg1);
+fail:
+	if (arg1 && lparg1) (*env)->ReleaseByteArrayElements(env, arg1, lparg1, 0);
 	OS_NATIVE_EXIT(env, that, g_1value_1set_1string_FUNC);
 }
 #endif
@@ -13754,6 +13778,26 @@ JNIEXPORT jlong JNICALL OS_NATIVE(pango_1attr_1foreground_1new)
 	OS_NATIVE_ENTER(env, that, pango_1attr_1foreground_1new_FUNC);
 	rc = (jlong)pango_attr_foreground_new(arg0, arg1, arg2);
 	OS_NATIVE_EXIT(env, that, pango_1attr_1foreground_1new_FUNC);
+	return rc;
+}
+#endif
+
+#ifndef NO_pango_1attr_1insert_1hyphens_1new
+JNIEXPORT jlong JNICALL OS_NATIVE(pango_1attr_1insert_1hyphens_1new)
+	(JNIEnv *env, jclass that, jboolean arg0)
+{
+	jlong rc = 0;
+	OS_NATIVE_ENTER(env, that, pango_1attr_1insert_1hyphens_1new_FUNC);
+/*
+	rc = (jlong)pango_attr_insert_hyphens_new(arg0);
+*/
+	{
+		OS_LOAD_FUNCTION(fp, pango_attr_insert_hyphens_new)
+		if (fp) {
+			rc = (jlong)((jlong (CALLING_CONVENTION*)(jboolean))fp)(arg0);
+		}
+	}
+	OS_NATIVE_EXIT(env, that, pango_1attr_1insert_1hyphens_1new_FUNC);
 	return rc;
 }
 #endif
@@ -14873,6 +14917,18 @@ JNIEXPORT void JNICALL OS_NATIVE(pango_1tab_1array_1set_1tab)
 	OS_NATIVE_ENTER(env, that, pango_1tab_1array_1set_1tab_FUNC);
 	pango_tab_array_set_tab((PangoTabArray *)arg0, (gint)arg1, (PangoTabAlign)arg2, (gint)arg3);
 	OS_NATIVE_EXIT(env, that, pango_1tab_1array_1set_1tab_FUNC);
+}
+#endif
+
+#ifndef NO_pango_1version
+JNIEXPORT jint JNICALL OS_NATIVE(pango_1version)
+	(JNIEnv *env, jclass that)
+{
+	jint rc = 0;
+	OS_NATIVE_ENTER(env, that, pango_1version_FUNC);
+	rc = (jint)pango_version();
+	OS_NATIVE_EXIT(env, that, pango_1version_FUNC);
+	return rc;
 }
 #endif
 

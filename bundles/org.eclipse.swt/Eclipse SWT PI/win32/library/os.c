@@ -23,6 +23,11 @@
 #define OS_NATIVE(func) Java_org_eclipse_swt_internal_win32_OS_##func
 #endif
 
+#ifdef _WIN32
+  /* Many methods don't use their 'env' and 'that' arguments */
+  #pragma warning (disable: 4100)
+#endif
+
 #ifndef NO_ACCEL_1sizeof
 JNIEXPORT jint JNICALL OS_NATIVE(ACCEL_1sizeof)
 	(JNIEnv *env, jclass that)
@@ -1516,7 +1521,7 @@ JNIEXPORT jboolean JNICALL OS_NATIVE(DwmSetWindowAttribute)
 	jboolean rc = 0;
 	OS_NATIVE_ENTER(env, that, DwmSetWindowAttribute_FUNC);
 	if (arg2) if ((lparg2 = (*env)->GetIntArrayElements(env, arg2, NULL)) == NULL) goto fail;
-	rc = (jboolean)DwmSetWindowAttribute((HDC)arg0, arg1, lparg2, arg3);
+	rc = (jboolean)DwmSetWindowAttribute((HWND)arg0, arg1, lparg2, arg3);
 fail:
 	if (arg2 && lparg2) (*env)->ReleaseIntArrayElements(env, arg2, lparg2, 0);
 	OS_NATIVE_EXIT(env, that, DwmSetWindowAttribute_FUNC);
@@ -3379,18 +3384,6 @@ JNIEXPORT jint JNICALL OS_NATIVE(GetUpdateRgn)
 }
 #endif
 
-#ifndef NO_GetVersion
-JNIEXPORT jint JNICALL OS_NATIVE(GetVersion)
-	(JNIEnv *env, jclass that)
-{
-	jint rc = 0;
-	OS_NATIVE_ENTER(env, that, GetVersion_FUNC);
-	rc = (jint)GetVersion();
-	OS_NATIVE_EXIT(env, that, GetVersion_FUNC);
-	return rc;
-}
-#endif
-
 #ifndef NO_GetWindow
 JNIEXPORT jlong JNICALL OS_NATIVE(GetWindow)
 	(JNIEnv *env, jclass that, jlong arg0, jint arg1)
@@ -4664,6 +4657,22 @@ JNIEXPORT jlong JNICALL OS_NATIVE(LoadImage)
 	OS_NATIVE_ENTER(env, that, LoadImage_FUNC);
 	rc = (jlong)LoadImage((HINSTANCE)arg0, (LPWSTR)arg1, arg2, arg3, arg4, arg5);
 	OS_NATIVE_EXIT(env, that, LoadImage_FUNC);
+	return rc;
+}
+#endif
+
+#ifndef NO_LoadKeyboardLayout
+JNIEXPORT jlong JNICALL OS_NATIVE(LoadKeyboardLayout)
+	(JNIEnv *env, jclass that, jcharArray arg0, jlong arg1)
+{
+	jchar *lparg0=NULL;
+	jlong rc = 0;
+	OS_NATIVE_ENTER(env, that, LoadKeyboardLayout_FUNC);
+	if (arg0) if ((lparg0 = (*env)->GetCharArrayElements(env, arg0, NULL)) == NULL) goto fail;
+	rc = (jlong)LoadKeyboardLayout((LPCWSTR)lparg0, (UINT)arg1);
+fail:
+	if (arg0 && lparg0) (*env)->ReleaseCharArrayElements(env, arg0, lparg0, 0);
+	OS_NATIVE_EXIT(env, that, LoadKeyboardLayout_FUNC);
 	return rc;
 }
 #endif
@@ -7070,6 +7079,18 @@ fail:
 }
 #endif
 
+#ifndef NO_RegisterHotKey
+JNIEXPORT jboolean JNICALL OS_NATIVE(RegisterHotKey)
+	(JNIEnv *env, jclass that, jlong arg0, jint arg1, jint arg2, jint arg3)
+{
+	jboolean rc = 0;
+	OS_NATIVE_ENTER(env, that, RegisterHotKey_FUNC);
+	rc = (jboolean)RegisterHotKey((HWND)arg0, arg1, (UINT)arg2, (UINT)arg3);
+	OS_NATIVE_EXIT(env, that, RegisterHotKey_FUNC);
+	return rc;
+}
+#endif
+
 #ifndef NO_RegisterTouchWindow
 JNIEXPORT jboolean JNICALL OS_NATIVE(RegisterTouchWindow)
 	(JNIEnv *env, jclass that, jlong arg0, jint arg1)
@@ -8469,7 +8490,7 @@ JNIEXPORT jint JNICALL OS_NATIVE(SetDCBrushColor)
 {
 	jint rc = 0;
 	OS_NATIVE_ENTER(env, that, SetDCBrushColor_FUNC);
-	rc = (jint)SetDCBrushColor(arg0, arg1);
+	rc = (jint)SetDCBrushColor((HDC)arg0, arg1);
 	OS_NATIVE_EXIT(env, that, SetDCBrushColor_FUNC);
 	return rc;
 }
@@ -9454,6 +9475,18 @@ JNIEXPORT jboolean JNICALL OS_NATIVE(UnhookWindowsHookEx)
 }
 #endif
 
+#ifndef NO_UnloadKeyboardLayout
+JNIEXPORT jboolean JNICALL OS_NATIVE(UnloadKeyboardLayout)
+	(JNIEnv *env, jclass that, jlong arg0)
+{
+	jboolean rc = 0;
+	OS_NATIVE_ENTER(env, that, UnloadKeyboardLayout_FUNC);
+	rc = (jboolean)UnloadKeyboardLayout((HKL)arg0);
+	OS_NATIVE_EXIT(env, that, UnloadKeyboardLayout_FUNC);
+	return rc;
+}
+#endif
+
 #ifndef NO_UnmapViewOfFile
 JNIEXPORT jboolean JNICALL OS_NATIVE(UnmapViewOfFile)
 	(JNIEnv *env, jclass that, jlong arg0)
@@ -9478,6 +9511,18 @@ JNIEXPORT jboolean JNICALL OS_NATIVE(UnregisterClass)
 fail:
 	if (arg0 && lparg0) (*env)->ReleaseCharArrayElements(env, arg0, lparg0, JNI_ABORT);
 	OS_NATIVE_EXIT(env, that, UnregisterClass_FUNC);
+	return rc;
+}
+#endif
+
+#ifndef NO_UnregisterHotKey
+JNIEXPORT jboolean JNICALL OS_NATIVE(UnregisterHotKey)
+	(JNIEnv *env, jclass that, jlong arg0, jint arg1)
+{
+	jboolean rc = 0;
+	OS_NATIVE_ENTER(env, that, UnregisterHotKey_FUNC);
+	rc = (jboolean)UnregisterHotKey((HWND)arg0, arg1);
+	OS_NATIVE_EXIT(env, that, UnregisterHotKey_FUNC);
 	return rc;
 }
 #endif

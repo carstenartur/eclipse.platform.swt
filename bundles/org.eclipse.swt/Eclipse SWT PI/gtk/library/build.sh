@@ -81,10 +81,6 @@ if [ "${OS}" = "" ]; then
 	OS=`uname -s`
 fi
 case $OS in
-	"Windows_NT")
-		SWT_OS=win32
-		MAKEFILE=make_win32.mak
-		;;
 	*)
 		SWT_OS=`uname -s | tr -s '[:upper:]' '[:lower:]'`
 		MAKEFILE=make_linux.mak
@@ -138,7 +134,7 @@ case $SWT_OS.$SWT_ARCH in
 			export CC=gcc
 		fi
 		if [ "${JAVA_HOME}" = "" ]; then
-			export JAVA_HOME=`readlink -f /usr/bin/java | sed "s:jre/bin/java::"`
+			export JAVA_HOME=`readlink -f /usr/bin/java | sed "s:jre/::" | sed "s:bin/java::"`
 		fi
 		if [ "${PKG_CONFIG_PATH}" = "" ]; then
 			export PKG_CONFIG_PATH="/usr/lib64/pkgconfig/"

@@ -1247,7 +1247,7 @@ public static final native void g_signal_emit_by_name(long instance, byte[] deta
  * @param instance cast=(gpointer)
  * @param handler_id cast=(gulong)
  */
-public static final native void g_signal_handler_disconnect(long instance, int handler_id);
+public static final native void g_signal_handler_disconnect(long instance, long handler_id);
 /**
  * @param instance cast=(gpointer)
  * @param mask cast=(GSignalMatchType)
@@ -1378,7 +1378,7 @@ public static final native void g_value_set_int64 (long value, long v);
 /** @param value cast=(GValue *)
  *  @param v_string cast =(const gchar *)
  * */
-public static final native void g_value_set_string (long value, long v_string);
+public static final native void g_value_set_string (long value, byte[] v_string);
 /** @param value cast=(GValue *) */
 public static final native long g_value_get_string (long value);
 /** @param value cast=(GValue *) */
@@ -1497,6 +1497,7 @@ public static final native void memmove(PangoLayoutRun dest, long src, long size
  * @param size cast=(size_t)
  */
 public static final native void memmove(PangoLogAttr dest, long src, long size);
+public static final native int pango_version();
 /** @param attribute cast=(const PangoAttribute *) */
 public static final native long pango_attribute_copy(long attribute);
 public static final native long pango_attr_background_new(short red, short green, short blue);
@@ -1534,6 +1535,8 @@ public static final native void pango_attr_iterator_destroy(long iterator);
 public static final native long pango_attr_list_new();
 /** @param list cast=(PangoAttrList *) */
 public static final native void pango_attr_list_unref(long list);
+/** @method flags=dynamic **/
+public static final native long pango_attr_insert_hyphens_new(boolean hyphens);
 public static final native long pango_attr_strikethrough_color_new(short red, short green, short blue);
 public static final native long pango_attr_strikethrough_new(boolean strikethrough);
 public static final native long pango_attr_underline_color_new(short red, short green, short blue);

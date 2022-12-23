@@ -154,14 +154,14 @@ protected String[] getTypeNames() {
 		return new String[] {UTF8_STRING, COMPOUND_TEXT, STRING};
 	}
 	if(GTK.GTK4) {
-		return new String[] {STRING};
+		return new String[] {"text/plain", STRING};
 	}
 
 	return new String[] {UTF8_STRING, STRING};
 }
 
 boolean checkText(Object object) {
-	return (object != null && object instanceof String && ((String)object).length() > 0);
+	return (object instanceof String && !((String)object).isEmpty());
 }
 
 @Override

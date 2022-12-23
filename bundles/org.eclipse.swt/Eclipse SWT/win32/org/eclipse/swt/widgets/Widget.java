@@ -1370,6 +1370,61 @@ boolean setInputState (Event event, int type) {
 	return true;
 }
 
+/**
+ * On Windows, keyboard layout translates a key press twice:
+ * <ol>
+ * <li>First translation is made from "scan code" (can be thought of
+ * as geometrical location of key on keyboard) to "virtual key"
+ * (can be thought of as a key meaning on latin keyboard). This
+ * happens even for layouts that have no latin keys (Bulgarian,
+ * Hebrew, Japanese, etc).</li>
+ * <li>Second translation is made from "virtual key" to character(s).
+ * A virtual key can produce zero chars (dead keys), one char
+ * (usual keys), or more than one char (ligatures).</li>
+ * </ol>
+ *
+ * Such two-step translation allows to answer both which character
+ * to produce, and which keyboard shortcut to invoke in app.
+ *
+ * Let's see some examples:<br>
+ * <table>
+ *  <tr><th>Layout</th><th>Key row</th><th>Key col</th><th>Scan code</th><th>Virt key</th><th>Character</th></tr>
+ *  <tr><td>English US    </td><td>3</td><td>5</td><td>0x13</td><td>VK_R</td><td>r</td></tr>
+ *  <tr><td>English US    </td><td>3</td><td>6</td><td>0x14</td><td>VK_T</td><td>t</td></tr>
+ *  <tr><td>English Dvorak</td><td>3</td><td>5</td><td>0x13</td><td>VK_P</td><td>p</td></tr>
+ *  <tr><td>English Dvorak</td><td>3</td><td>6</td><td>0x14</td><td>VK_Y</td><td>y</td></tr>
+ *  <tr><td>Bulgarian     </td><td>3</td><td>5</td><td>0x13</td><td>VK_R</td><td>и</td></tr>
+ *  <tr><td>Bulgarian     </td><td>3</td><td>6</td><td>0x14</td><td>VK_T</td><td>ш</td></tr>
+ * </table><br>
+ * In these examples, it can be seen how
+ * <ul>
+ *  <li>Same physical key always has the same scan code</li>
+ *  <li>Same physical key can produce different characters (that's
+ *   what keyboard layouts are for)</li>
+ *  <li>Same physical key can produce different virtual keys
+ *   (see English US, Dvorak)</li>
+ *  <li>Same virtual key can produce different characters (see
+ *   English, Bulgarian). Bulgarian only has cyrillic characters
+ *   and no latin ones, but still has standard virtual keys.</li>
+ * </ul>
+ *
+ * Note that it's valid for a "latin" virtual key to produce some
+ * other latin character. For example, VK_C could produce latin J.
+ * This can be used in Dvorak-QWERTY keyboard layout that types
+ * Dvorak, but has QWERTY keyboard shortcuts.
+ * <br>
+ * Due to two-step translation, almost every common keyboard layout
+ * has virtual keys VK_A ... VK_Z mapped on it, even if layout
+ * doesn't type a single latin character. On Windows, keyboard
+ * shortcuts bind to virtual keys. Therefore:
+ * <ul>
+ * <li>In English US, Ctrl+C will be produced by Ctrl and key labeled 'C'.</li>
+ * <li>In Dvorak, Ctrl+C will be produced by Ctrl and key labeled 'C'.
+ *  Note that Dvorak 'C' is where English US 'I' is.</li>
+ * <li>In Bulgarian, Ctrl+C will be produced by Ctrl and key labeled 'Ъ'.
+ *  Because this is the key to which VK_C is mapped.</li>
+ * </ul>
+ */
 boolean setKeyState (Event event, int type, long wParam, long lParam) {
 
 	/*
@@ -1425,11 +1480,9 @@ boolean setKeyState (Event event, int type, long wParam, long lParam) {
 	} else {
 		event.keyCode = display.lastKey;
 	}
-	if (display.lastAscii != 0 || display.lastNull) {
-		event.character = (char) display.lastAscii;
-	}
+	event.character = (char) display.lastAscii;
 	if (event.keyCode == 0 && event.character == 0) {
-		if (!display.lastNull) return false;
+		return false;
 	}
 	return setInputState (event, type);
 }
@@ -1538,7 +1591,6 @@ LRESULT wmCaptureChanged (long hwnd, long wParam, long lParam) {
 
 LRESULT wmChar (long hwnd, long wParam, long lParam) {
 	display.lastAscii = (int)wParam;
-	display.lastNull = wParam == 0;
 	if (!sendKeyEvent (SWT.KeyDown, OS.WM_CHAR, wParam, lParam)) {
 		return LRESULT.ONE;
 	}
@@ -1586,7 +1638,7 @@ LRESULT wmIMEChar (long hwnd, long wParam, long lParam) {
 	Display display = this.display;
 	display.lastKey = 0;
 	display.lastAscii = (int)wParam;
-	display.lastVirtual = display.lastNull = display.lastDead = false;
+	display.lastVirtual = display.lastDead = false;
 	if (!sendKeyEvent (SWT.KeyDown, OS.WM_IME_CHAR, wParam, lParam)) {
 		return LRESULT.ONE;
 	}
@@ -1594,6 +1646,31 @@ LRESULT wmIMEChar (long hwnd, long wParam, long lParam) {
 	// widget could be disposed at this point
 	display.lastKey = display.lastAscii = 0;
 	return LRESULT.ONE;
+}
+
+int mapVirtualKey (int virtualKey) {
+	if (('0' <= virtualKey) && (virtualKey <= '9')) {
+		// Some keyboard layouts have non-latin digits. For example,
+		// Devanagari and Bengali. Some keyboard layouts repurpose
+		// digit keys for something else. For example, French and
+		// Lithuanian. Yet still, applications expect to see digits
+		// in 'Event.keyCode' to be able to match these to hot keys.
+		// Note that on Windows, most native applications bind hot
+		// keys to virtual code of the key and not the character
+		// produced by it. For them, this problem doesn't even exist.
+		// Note that virtual key codes for 0...9 match corresponding
+		// chars.
+		return virtualKey;
+	} else if (('A' <= virtualKey) && (virtualKey <= 'Z')) {
+		// See above about digits. Also note that on Windows,
+		// 'MapVirtualKey()' is hardcoded to always return 'A'...'Z'
+		// for corresponding virtual key codes (undocumented but has
+		// been this way for ages). Note that virtual key codes for
+		// A...Z match corresponding chars.
+		return virtualKey;
+	} else {
+		return OS.MapVirtualKey (virtualKey, 2);
+	}
 }
 
 LRESULT wmKeyDown (long hwnd, long wParam, long lParam) {
@@ -1611,42 +1688,20 @@ LRESULT wmKeyDown (long hwnd, long wParam, long lParam) {
 
 	/* Clear last key and last ascii because a new key has been typed */
 	display.lastAscii = display.lastKey = 0;
-	display.lastVirtual = display.lastNull = display.lastDead = false;
+	display.lastVirtual = display.lastDead = false;
 
-	/* Map the virtual key */
-	int mapKey = OS.MapVirtualKey ((int)wParam, 2);
-	/*
-	* Feature in Windows.  For Devanagari and Bengali numbers,
-	* MapVirtualKey() returns the localized number instead of
-	* the ASCII equivalent.  For example, MapVirtualKey()
-	* maps VK_1 on the numbers keyboard to \u0967, which is
-	* the Devanagari digit '1', but not ASCII.
-	* The fix is to test for Devanagari and Bengali digits and
-	* map these explicitly.
-	*
-	* NOTE: VK_0 to VK_9 are the same as ASCII.
-	*/
-	if (('\u09e6' <= mapKey && mapKey <= '\u09ef') || ('\u0966' <= mapKey && mapKey <= '\u096f')) {
-		mapKey = (int)wParam;
-	}
+	int mapKey = mapVirtualKey ((int)wParam);
 
 	/*
-	* Bug in Windows 95 and NT.  When the user types an accent key such
-	* as ^ to get an accented character on a German keyboard, the accent
-	* key should be ignored and the next key that the user types is the
-	* accented key.  The fix is to detect the accent key stroke (called
-	* a dead key) by testing the high bit of the value returned by
-	* MapVirtualKey().
-	*
-	* When the user types an accent key that does not correspond to a
-	* virtual key, MapVirtualKey() won't set the high bit to indicate
-	* a dead key.  This happens when an accent key, such as '^' is the
-	* result of a modifier such as Shift key and MapVirtualKey() always
-	* returns the unshifted key.  The fix is to peek for a WM_DEADCHAR
-	* and avoid issuing the event.
+	* Dead keys are special keys that modify next keys pressed. For
+	* example, in German, pressing ^ and then E produces Ê. SWT is
+	* designed to not report the dead key and only report the final
+	* character(s). Note that there might be multiple characters,
+	* for example, ^^ will produce nothing on first key and ^^ when
+	* second key is pressed. The most reliable way of detecting dead
+	* keys is by peeking for 'WM_DEADCHAR'. See similar code block
+	* below for a detailed explanation.
 	*/
-	if ((mapKey & 0x80000000) != 0) return null;
-
 	MSG msg = new MSG ();
 	int flags = OS.PM_NOREMOVE | OS.PM_NOYIELD;
 	if (OS.PeekMessage (msg, hwnd, OS.WM_DEADCHAR, OS.WM_DEADCHAR, flags)) {
@@ -1657,15 +1712,48 @@ LRESULT wmKeyDown (long hwnd, long wParam, long lParam) {
 	}
 
 	/*
-	*  Bug in Windows.  Somehow, the widget is becoming disposed after
-	*  calling PeekMessage().  In rare circumstances, it seems that
-	*  PeekMessage() can allow SWT listeners to run that might contain
-	*  application code that disposes the widget.  It is not exactly
-	*  clear how this can happen.  PeekMessage() is only looking for
-	*  WM_DEADCHAR.  It is not dispatching any message that it finds
-	*  or removing any message from the queue.  Cross-thread messages
-	*  are disabled.  The fix is to check for a disposed widget and
-	*  return without calling the window proc.
+	 * SWT is designed to deliver both 'WM_KEYDOWN' and 'WM_CHAR' in a
+	 * single 'SWT.KeyDown' event. However, 'WM_KEYDOWN' is followed by
+	 * 'WM_CHAR' only if pressed key types some character. For example,
+	 * A produces a character, while F1 does not.
+	 * Figuring if 'WM_KEYDOWN' is going to be followed up by 'WM_CHAR'
+	 * is hard in Windows:
+	 * 1) Everything depends on keyboard layout, and there are pretty
+	 *    exotic layouts out there.
+	 * 2) MapVirtualKey() API ignores modifier keys, and therefore
+	 *    can't be used if any modifier keys are present.
+	 * 3) ToUnicode() API is quite good, but it alters internal keyboard
+	 *    state for dead keys. For example, in German, pressing ^ and
+	 *    then E produces Ê. However, if ToUnicode() is called in
+	 *    between, it will produce E instead. The internal state is
+	 *    kept in kernel and I didn't find any reasonable ways of
+	 *    restoring it after calling ToUnicode().
+	 * 4) Win10 introduces new flag for ToUnicode() to preserve
+	 *    internal state, but SWT has to support earlier Windows at
+	 *    the moment.
+	 * The workaround is to peek for 'WM_CHAR'. This works because when
+	 * SWT calls 'TranslateMessage()', Windows posts corresponding
+	 * 'WM_CHAR' message(s). Only then SWT calls 'DispatchMessage()' to
+	 * actually handle 'WM_KEYDOWN'. So at this moment, if 'WM_CHAR' is
+	 * expected, it will already be present in the queue. One other
+	 * thing to notice is that 'GetMessage()' returns all sent/posted
+	 * messages before input events (see MSDN), so even if some app
+	 * sends 'WM_CHAR' to SWT window, it will be processed before
+	 * 'WM_KEYDOWN' even if key event occurred before.
+	 */
+	boolean isCharPending = false;
+	if (OS.PeekMessage (msg, hwnd, OS.WM_CHAR, OS.WM_CHAR, flags)) {
+		isCharPending = true;
+	}
+
+	/*
+	* Bug 88281: Sometimes, 'PeekMessage()' could result in widget
+	* being disposed. Most likely this was due to 'WH_MSGFILTER' hook
+	* that previously incorrectly reacted to 'PM_NOREMOVE' as well
+	* as 'PM_REMOVE'. Some SWT hooks can do no-trivial things. I'm
+	* not sure if this can still happen now that hooks are fixed to
+	* only react to 'PM_REMOVE'. I'm also not 100% sure that hooks
+	* are the only way to trigger this problem.
 	*/
 	if (isDisposed ()) return LRESULT.ONE;
 
@@ -1683,11 +1771,6 @@ LRESULT wmKeyDown (long hwnd, long wParam, long lParam) {
 	* There is no way to map wParam=30 in WM_CHAR to the correct
 	* value.  Also, on international keyboards, the control key
 	* may be down when the user has not entered a control character.
-	*
-	* NOTE: On Windows 98, keypad keys are virtual despite the
-	* fact that a WM_CHAR is issued.  On Windows 2000 and XP,
-	* they are not virtual.  Therefore it is necessary to force
-	* numeric keypad keys to be virtual.
 	*/
 	display.lastVirtual = mapKey == 0 || display.numpadKey ((int)wParam) != 0;
 	if (display.lastVirtual) {
@@ -1711,15 +1794,6 @@ LRESULT wmKeyDown (long hwnd, long wParam, long lParam) {
 		* down.
 		*/
 		if (OS.VK_NUMPAD0 <= display.lastKey && display.lastKey <= OS.VK_DIVIDE) {
-			/*
-			* Feature in Windows.  Calling to ToAscii() or ToUnicode(), clears
-			* the accented state such that the next WM_CHAR loses the accent.
-			* This makes is critical that the accent key is detected.  Also,
-			* these functions clear the character that is entered using the
-			* special Windows keypad sequence when NumLock is down (ie. typing
-			* ALT+0231 should gives 'c' with a cedilla when NumLock is down).
-			*/
-			if (display.asciiKey (display.lastKey) != 0) return null;
 			display.lastAscii = display.numpadKey (display.lastKey);
 		}
 	} else {
@@ -1729,7 +1803,7 @@ LRESULT wmKeyDown (long hwnd, long wParam, long lParam) {
 		* upper case values in WM_KEYDOWN despite the fact that the
 		* Shift was not pressed.
 		*/
-		display.lastKey = (int)OS.CharLower ((short) mapKey);
+		display.lastKey = (int)OS.CharLower (OS.LOWORD (mapKey));
 
 		/*
 		* Feature in Windows. The virtual key VK_CANCEL is treated
@@ -1740,61 +1814,29 @@ LRESULT wmKeyDown (long hwnd, long wParam, long lParam) {
 		*/
 		if (wParam == OS.VK_CANCEL) display.lastVirtual = true;
 
-		/*
-		* Some key combinations map to Windows ASCII keys depending
-		* on the keyboard.  For example, Ctrl+Alt+Q maps to @ on a
-		* German keyboard.  If the current key combination is special,
-		* the correct character is placed in wParam for processing in
-		* WM_CHAR.  If this is the case, issue the key down event from
-		* inside WM_CHAR.
-		*/
-		int asciiKey = display.asciiKey ((int)wParam);
-		if (asciiKey != 0) {
+		if (OS.GetKeyState (OS.VK_CONTROL) < 0) {
 			/*
-			* When the user types Ctrl+Space, ToAscii () maps this to
-			* Space.  Normally, ToAscii () maps a key to a different
-			* key if both a WM_KEYDOWN and a WM_CHAR will be issued.
-			* To avoid the extra SWT.KeyDown, look for a space and
-			* issue the event from WM_CHAR.
-			*/
-			if (asciiKey == ' ') return null;
-			if (asciiKey != (int)wParam) return null;
-			/*
-			* Feature in Windows. The virtual key VK_CANCEL is treated
-			* as both a virtual key and ASCII key by Windows.  This
-			* means that a WM_CHAR with WPARAM=3 will be issued for
-			* this key. To avoid the extra SWT.KeyDown, look for
-			* VK_CANCEL and issue the event from WM_CHAR.
-			*/
-			if (wParam == OS.VK_CANCEL) return null;
+			 * Get the shifted state or convert to lower case if necessary.
+			 * If the user types Ctrl+A, LastAscii should be 'a', not 'A'.
+			 * If the user types Ctrl+Shift+A, LastAscii should be 'A'.
+			 * If the user types Ctrl+Shift+6, the value of LastAscii will
+			 * depend on the international keyboard.
+			 */
+			if (OS.GetKeyState (OS.VK_SHIFT) < 0) {
+				display.lastAscii = display.shiftedKey ((int)wParam);
+				if (display.lastAscii == 0) display.lastAscii = mapKey;
+			} else {
+				display.lastAscii = (int)OS.CharLower (OS.LOWORD (mapKey));
+			}
+
+			display.lastAscii = display.controlKey (display.lastAscii);
 		}
-
-		/*
-		* If the control key is not down at this point, then
-		* the key that was pressed was an accent key or a regular
-		* key such as 'A' or Shift+A.  In that case, issue the
-		* key event from WM_CHAR.
-		*/
-		if (OS.GetKeyState (OS.VK_CONTROL) >= 0) return null;
-
-		/*
-		* Get the shifted state or convert to lower case if necessary.
-		* If the user types Ctrl+A, LastAscii should be 'a', not 'A'.
-		* If the user types Ctrl+Shift+A, LastAscii should be 'A'.
-		* If the user types Ctrl+Shift+6, the value of LastAscii will
-		* depend on the international keyboard.
-		*/
-		if (OS.GetKeyState (OS.VK_SHIFT) < 0) {
-			display.lastAscii = display.shiftedKey ((int)wParam);
-			if (display.lastAscii == 0) display.lastAscii = mapKey;
-		} else {
-			display.lastAscii = (int)OS.CharLower ((short) mapKey);
-		}
-
-		/* Note that Ctrl+'@' is ASCII NUL and is delivered in WM_CHAR */
-		if (display.lastAscii == '@') return null;
-		display.lastAscii = display.controlKey (display.lastAscii);
 	}
+
+	if (isCharPending) {
+		return null;
+	}
+
 	if (!sendKeyEvent (SWT.KeyDown, OS.WM_KEYDOWN, wParam, lParam)) {
 		return LRESULT.ONE;
 	}
@@ -1811,22 +1853,12 @@ LRESULT wmKeyUp (long hwnd, long wParam, long lParam) {
 	*/
 	if (!hooks (SWT.KeyUp) && !display.filters (SWT.KeyUp)) {
 		display.lastKey = display.lastAscii = 0;
-		display.lastVirtual = display.lastNull = display.lastDead = false;
+		display.lastVirtual = display.lastDead = false;
 		return null;
 	}
 
 	/* Map the virtual key. */
 	int mapKey = OS.MapVirtualKey ((int)wParam, 2);
-
-	/*
-	* Bug in Windows 95 and NT.  When the user types an accent key such
-	* as ^ to get an accented character on a German keyboard, the accent
-	* key should be ignored and the next key that the user types is the
-	* accented key. The fix is to detect the accent key stroke (called
-	* a dead key) by testing the high bit of the value returned by
-	* MapVirtualKey ().
-	*/
-	if ((mapKey & 0x80000000) != 0) return null;
 
 	if (display.lastDead) return null;
 
@@ -1850,7 +1882,7 @@ LRESULT wmKeyUp (long hwnd, long wParam, long lParam) {
 		if (wParam == OS.VK_CANCEL) display.lastVirtual = true;
 		if (display.lastKey == 0) {
 			display.lastAscii = 0;
-			display.lastNull = display.lastDead = false;
+			display.lastDead = false;
 			return null;
 		}
 	}
@@ -1860,7 +1892,7 @@ LRESULT wmKeyUp (long hwnd, long wParam, long lParam) {
 	}
 	// widget could be disposed at this point
 	display.lastKey = display.lastAscii = 0;
-	display.lastVirtual = display.lastNull = display.lastDead = false;
+	display.lastVirtual = display.lastDead = false;
 	return result;
 }
 
@@ -2304,7 +2336,6 @@ LRESULT wmSetFocus (long hwnd, long wParam, long lParam) {
 LRESULT wmSysChar (long hwnd, long wParam, long lParam) {
 	Display display = this.display;
 	display.lastAscii = (int)wParam;
-	display.lastNull = wParam == 0;
 
 	/* Do not issue a key down if a menu bar mnemonic was invoked */
 	if (!hooks (SWT.KeyDown) && !display.filters (SWT.KeyDown)) {
@@ -2365,10 +2396,28 @@ LRESULT wmSysKeyDown (long hwnd, long wParam, long lParam) {
 
 	/* Clear last key and last ascii because a new key has been typed */
 	display.lastAscii = display.lastKey = 0;
-	display.lastVirtual = display.lastNull = display.lastDead = false;
+	display.lastVirtual = display.lastDead = false;
 
-	/* If are going to get a WM_SYSCHAR, ignore this message. */
-	int mapKey = OS.MapVirtualKey ((int)wParam, 2);
+	int mapKey = mapVirtualKey ((int)wParam);
+
+	// See corresponding code block in 'WM_KEYDOWN' for an explanation.
+	MSG msg = new MSG ();
+	int flags = OS.PM_NOREMOVE | OS.PM_NOYIELD;
+	if (OS.PeekMessage (msg, hwnd, OS.WM_SYSDEADCHAR, OS.WM_SYSDEADCHAR, flags)) {
+		display.lastDead = true;
+		display.lastVirtual = mapKey == 0;
+		display.lastKey = display.lastVirtual ? (int)wParam : mapKey;
+		return null;
+	}
+
+	// See corresponding code block in 'WM_KEYDOWN' for an explanation.
+	boolean isCharPending = false;
+	if (OS.PeekMessage (msg, hwnd, OS.WM_SYSCHAR, OS.WM_SYSCHAR, flags)) {
+		isCharPending = true;
+	}
+
+	// See corresponding code block in 'WM_KEYDOWN' for an explanation.
+	if (isDisposed ()) return LRESULT.ONE;
 
 	display.lastVirtual = mapKey == 0 || display.numpadKey ((int)wParam) != 0;
 	if (display.lastVirtual) {
@@ -2382,24 +2431,7 @@ LRESULT wmSysKeyDown (long hwnd, long wParam, long lParam) {
 		*/
 		if (display.lastKey == OS.VK_DELETE) display.lastAscii = 0x7F;
 
-		/* When a keypad key is typed, a WM_SYSCHAR is not issued */
 		if (OS.VK_NUMPAD0 <= display.lastKey && display.lastKey <= OS.VK_DIVIDE) {
-			/*
-			* A WM_SYSCHAR will be issued for '*', '+', '-', '.' and '/'
-			* on the numeric keypad.  Avoid issuing the key event twice
-			* by checking for these keys.  Note that calling to ToAscii()
-			* or ToUnicode(), clear the character that is entered using
-			* the special Windows keypad sequence when NumLock is down
-			* (ie. typing ALT+0231 should gives 'c' with a cedilla when
-			* NumLock is down).  Do not call either of these from here.
-			*/
-			switch (display.lastKey) {
-				case OS.VK_MULTIPLY:
-				case OS.VK_ADD:
-				case OS.VK_SUBTRACT:
-				case OS.VK_DECIMAL:
-				case OS.VK_DIVIDE: return null;
-			}
 			display.lastAscii = display.numpadKey (display.lastKey);
 		}
 	} else {
@@ -2409,7 +2441,10 @@ LRESULT wmSysKeyDown (long hwnd, long wParam, long lParam) {
 		* upper case values in WM_SYSKEYDOWN despite the fact that the
 		* Shift was not pressed.
 		*/
-		display.lastKey = (int)OS.CharLower ((short) mapKey);
+		display.lastKey = (int)OS.CharLower (OS.LOWORD (mapKey));
+	}
+
+	if (isCharPending) {
 		return null;
 	}
 

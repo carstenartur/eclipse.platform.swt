@@ -31,15 +31,6 @@ public class OS extends C {
 	*/
 	public static final boolean IsDBLocale;
 	/**
-	 * WARNING: This value can't be trusted since Win10. If the launcher's exe
-	 * doesn't have compatibility GUID in its manifest:<br>
-	 *   &lt;supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/&gt;<br>
-	 * then '6.2.9200' will be returned (version number for Win8).
-	 * JDK11 has the compatibility GUID, but Eclipse's launcher doesn't!
-	 * This may cause different behavior in debugger and in released SWT.
-	 */
-	public static final int WIN32_VERSION;
-	/**
 	 * Always reports the correct build number, regardless of manifest and
 	 * compatibility GUIDs. Note that build number alone is sufficient to
 	 * identify Windows version.
@@ -62,10 +53,6 @@ public class OS extends C {
 	public static final int SM_IMMENABLED = 0x52;
 
 	static {
-		/* Get the Windows version */
-		int dwVersion = OS.GetVersion ();
-		WIN32_VERSION = VERSION (dwVersion & 0xff, (dwVersion >> 8) & 0xff);
-
 		/*
 		 * Starting with Windows 10, GetVersionEx() lies about version unless
 		 * application manifest has a proper entry. RtlGetVersion() always
@@ -679,6 +666,7 @@ public class OS extends C {
 	public static final int KEY_WRITE = 0x20006;
 	public static final int KEYEVENTF_EXTENDEDKEY = 0x0001;
 	public static final int KEYEVENTF_KEYUP = 0x0002;
+	public static final int KEYEVENTF_SCANCODE = 0x0008;
 	public static final int L_MAX_URL_LENGTH = 2084;
 	public static final int LANG_JAPANESE = 0x11;
 	public static final int LANG_KOREAN = 0x12;
@@ -864,6 +852,8 @@ public class OS extends C {
 	public static final int MAX_LINKID_TEXT = 48;
 	public static final int MAX_PATH = 260;
 	public static final int MA_NOACTIVATE = 0x3;
+	public static final int MAPVK_VSC_TO_VK = 1;
+	public static final int MAPVK_VK_TO_CHAR = 2;
 	public static final int MB_ABORTRETRYIGNORE = 0x2;
 	public static final int MB_APPLMODAL = 0x0;
 	public static final int MB_ICONERROR = 0x10;
@@ -935,6 +925,9 @@ public class OS extends C {
 	public static final int MM_TEXT = 0x1;
 	public static final int MNC_CLOSE = 0x1;
 	public static final int MNS_CHECKORBMP = 0x4000000;
+	public static final int MOD_ALT     = 0x0001;
+	public static final int MOD_CONTROL = 0x0002;
+	public static final int MOD_SHIFT   = 0x0004;
 	public static final int MONITOR_DEFAULTTOPRIMARY = 0x1;
 	public static final int MONITOR_DEFAULTTONEAREST = 0x2;
 	public static final String MONTHCAL_CLASS = "SysMonthCal32"; //$NON-NLS-1$
@@ -1821,6 +1814,7 @@ public class OS extends C {
 	public static final int WM_SYSCHAR = 0x106;
 	public static final int WM_SYSCOLORCHANGE = 0x15;
 	public static final int WM_SYSCOMMAND = 0x112;
+	public static final int WM_SYSDEADCHAR = 0x0107;
 	public static final int WM_SYSKEYDOWN = 0x104;
 	public static final int WM_SYSKEYUP = 0x105;
 	public static final int WM_TABLET_FLICK = 0x02C0 + 11;
@@ -2620,7 +2614,7 @@ public static final native int DrawThemeBackground (long hTheme, long hdc, int i
  * @param pRect flags=no_out
  */
 public static final native int DrawThemeText (long hTheme, long hdc, int iPartId, int iStateId, char[] pszText, int iCharCount, int dwTextFlags, int dwTextFlags2, RECT pRect);
-/** @param hwnd cast=(HDC) */
+/** @param hwnd cast=(HWND) */
 public static final native boolean DwmSetWindowAttribute (long hwnd, int dwAttribute, int[] pvAttribute, int cbAttribute);
 /** @param hdc cast=(HDC) */
 public static final native boolean Ellipse (long hdc, int nLeftRect, int nTopRect, int nRightRect, int nBottomRect);
@@ -3010,7 +3004,6 @@ public static final native boolean GetUpdateRect (long hWnd, RECT lpRect, boolea
  * @param hRgn cast=(HRGN)
  */
 public static final native int GetUpdateRgn (long hWnd, long hRgn, boolean bErase);
-public static final native int GetVersion ();
 /** @param hWnd cast=(HWND) */
 public static final native long GetWindow (long hWnd, int uCmd);
 /** @param hWnd cast=(HWND) */
@@ -3281,6 +3274,11 @@ public static final native int LoadIconMetric (long hinst, long pszName, int lim
  * @param lpszName cast=(LPWSTR)
  */
 public static final native long LoadImage (long hinst, long lpszName, int uType, int cxDesired, int cyDesired, int fuLoad);
+/**
+ * @param pwszKLID cast=(LPCWSTR)
+ * @param Flags cast=(UINT)
+ */
+public static final native long LoadKeyboardLayout(char [] pwszKLID, long Flags);
 /** @param hMem cast=(HLOCAL) */
 public static final native long LocalFree (long hMem);
 /** @param hdc cast=(HDC) */
@@ -3859,6 +3857,12 @@ public static final native int RegEnumKeyEx (long hKey, int dwIndex, char [] lpN
 public static final native int RegisterClass (WNDCLASS lpWndClass);
 /**
  * @param hWnd cast=(HWND)
+ * @param fsModifiers cast=(UINT)
+ * @param vk cast=(UINT)
+ */
+public static final native boolean RegisterHotKey(long hWnd, int id, int fsModifiers, int vk);
+/**
+ * @param hWnd cast=(HWND)
  * @param ulFlags cast=(ULONG)
  */
 public static final native boolean RegisterTouchWindow(long hWnd, int ulFlags);
@@ -4272,6 +4276,7 @@ public static final native int SetCurrentProcessExplicitAppUserModelID (char[] A
 /** @param hCursor cast=(HCURSOR) */
 public static final native long SetCursor (long hCursor);
 public static final native boolean SetCursorPos (int X, int Y);
+/** @param hdc cast=(HDC) */
 public static final native int SetDCBrushColor (long hdc, int color);
 /**
  * @param hdc cast=(HDC)
@@ -4467,6 +4472,8 @@ public static final native boolean TranslateMessage (MSG lpmsg);
  * @param hdcSrc cast=(HDC)
  */
 public static final native boolean TransparentBlt (long hdcDest, int nXOriginDest, int nYOriginDest, int nWidthDest, int hHeightDest, long hdcSrc, int nXOriginSrc, int nYOriginSrc, int nWidthSrc, int nHeightSrc, int crTransparent);
+/** @param hkl cast=(HKL) */
+public static final native boolean UnloadKeyboardLayout (long hkl);
 /** @param hhk cast=(HHOOK) */
 public static final native boolean UnhookWindowsHookEx (long hhk);
 /**
@@ -4474,6 +4481,10 @@ public static final native boolean UnhookWindowsHookEx (long hhk);
  * @param hInstance cast=(HINSTANCE)
  */
 public static final native boolean UnregisterClass (char [] lpClassName, long hInstance);
+/**
+ * @param hWnd cast=(HWND)
+ */
+public static final native boolean UnregisterHotKey(long hWnd, int id);
 /** @param hwnd cast=(HWND) */
 public static final native boolean UnregisterTouchWindow (long hwnd);
 /** @param hWnd cast=(HWND) */

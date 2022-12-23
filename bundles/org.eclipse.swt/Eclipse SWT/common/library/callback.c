@@ -1635,6 +1635,9 @@ fail:
 JNIEXPORT void JNICALL CALLBACK_NATIVE(unbind)
   (JNIEnv *env, jclass that, jobject callback)
 {
+	/* Suppress warning about unreferenced parameter */
+	(void)that;
+
 	int i;
 	for (i=0; i<MAX_CALLBACKS; i++) {
 		if (callbackData[i].callback != NULL && (*env)->IsSameObject(env, callback, callbackData[i].callback)) {
@@ -1648,24 +1651,40 @@ JNIEXPORT void JNICALL CALLBACK_NATIVE(unbind)
 JNIEXPORT jboolean JNICALL CALLBACK_NATIVE(getEnabled)
   (JNIEnv *env, jclass that)
 {
+	/* Suppress warnings about unreferenced parameters */
+	(void)env;
+	(void)that;
+
 	return (jboolean)callbackEnabled;
 }
 
 JNIEXPORT jint JNICALL CALLBACK_NATIVE(getEntryCount)
   (JNIEnv *env, jclass that)
 {
+	/* Suppress warnings about unreferenced parameters */
+	(void)env;
+	(void)that;
+
 	return (jint)callbackEntryCount;
 }
 
 JNIEXPORT void JNICALL CALLBACK_NATIVE(setEnabled)
   (JNIEnv *env, jclass that, jboolean enable)
 {
+	/* Suppress warnings about unreferenced parameters */
+	(void)env;
+	(void)that;
+
 	callbackEnabled = enable;
 }
 
 JNIEXPORT void JNICALL CALLBACK_NATIVE(reset)
   (JNIEnv *env, jclass that)
 {
+	/* Suppress warnings about unreferenced parameters */
+	(void)env;
+	(void)that;
+
 	memset((void *)&callbackData, 0, sizeof(callbackData));
 }
 
@@ -1877,7 +1896,7 @@ jlong callback(int index, ...)
 	}
 #endif
 
-	(*JVM)->GetEnv(JVM, (void **)&env, JNI_VERSION_1_4);
+	(*JVM)->GetEnv(JVM, (void **)&env, JNI_VERSION_10);
 
 	if (env == NULL) {
 		(*JVM)->AttachCurrentThreadAsDaemon(JVM, (void **)&env, NULL);

@@ -805,7 +805,7 @@ void initNative(String filename) {
 	* Windows 7 when the image has a position offset in the first frame.
 	* The fix is to not use GDI+ image loading in this case.
 	*/
-	if (OS.WIN32_VERSION >= OS.VERSION(6, 1) && filename.toLowerCase().endsWith(".gif")) gdip = false;
+	if (filename.toLowerCase().endsWith(".gif")) gdip = false;
 	if (gdip) {
 		int length = filename.length();
 		char[] chars = new char[length+1];
@@ -1173,7 +1173,7 @@ public boolean equals (Object object) {
  * color of the widget to paint the transparent pixels of the image.
  * Use this method to check which color will be used in these cases
  * in place of transparency. This value may be set with setBackground().
- * <p>
+ * </p>
  *
  * @return the background color of the image, or null if there is no transparency in the image
  *
@@ -1616,10 +1616,10 @@ public ImageData getImageDataAtCurrentZoom() {
 			/* Construct and return the ImageData */
 			ImageData imageData = new ImageData(width, height, depth, palette, 4, data);
 			imageData.transparentPixel = this.transparentPixel;
-			if (isDib && depth == 32) {
+			if (depth == 32) {
 				byte straightData[] = new byte[imageSize];
 				byte alphaData[] = new byte[width * height];
-				boolean validAlpha = true;
+				boolean validAlpha = isDib;
 				for (int ap = 0, dp = 0; validAlpha && ap < alphaData.length; ap++, dp += 4) {
 					int b = data[dp    ] & 0xFF;
 					int g = data[dp + 1] & 0xFF;
@@ -1862,7 +1862,11 @@ static long [] init(Device device, Image image, ImageData i) {
 					}
 					break;
 				case 32:
-					if (!(redMask == 0xFF00 && greenMask == 0xFF0000 && blueMask == 0xFF000000)) {
+					if (i.getTransparencyType() != SWT.TRANSPARENCY_MASK) {
+						newDepth = 24;
+						newPalette = new PaletteData(0xFF, 0xFF00, 0xFF0000);
+					}
+					else if (!(redMask == 0xFF00 && greenMask == 0xFF0000 && blueMask == 0xFF000000)) {
 						newPalette = new PaletteData(0xFF00, 0xFF0000, 0xFF000000);
 					}
 					break;

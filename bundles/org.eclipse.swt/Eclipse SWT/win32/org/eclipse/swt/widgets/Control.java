@@ -723,19 +723,17 @@ void createHandle () {
 }
 
 void checkGesture () {
-	if (OS.WIN32_VERSION >= OS.VERSION (6, 1)) {
-		int value = OS.GetSystemMetrics (OS.SM_DIGITIZER);
-		if ((value & (OS.NID_READY | OS.NID_MULTI_INPUT)) != 0) {
-			/*
-			 * Feature in Windows 7: All gestures are enabled by default except GID_ROTATE.
-			 * Enable it explicitly by calling SetGestureConfig.
-			 */
-			GESTURECONFIG config = new GESTURECONFIG();
-			config.dwID = OS.GID_ROTATE;
-			config.dwWant = 1;
-			config.dwBlock = 0;
-			OS.SetGestureConfig (handle, 0, 1, config, GESTURECONFIG.sizeof);
-		}
+	int value = OS.GetSystemMetrics (OS.SM_DIGITIZER);
+	if ((value & (OS.NID_READY | OS.NID_MULTI_INPUT)) != 0) {
+		/*
+		 * Feature in Windows 7: All gestures are enabled by default except GID_ROTATE.
+		 * Enable it explicitly by calling SetGestureConfig.
+		 */
+		GESTURECONFIG config = new GESTURECONFIG();
+		config.dwID = OS.GID_ROTATE;
+		config.dwWant = 1;
+		config.dwBlock = 0;
+		OS.SetGestureConfig (handle, 0, 1, config, GESTURECONFIG.sizeof);
 	}
 }
 
@@ -3606,7 +3604,6 @@ public void setMenu (Menu menu) {
 /**
  * Sets the orientation of the receiver, which must be one
  * of the constants <code>SWT.LEFT_TO_RIGHT</code> or <code>SWT.RIGHT_TO_LEFT</code>.
- * <p>
  *
  * @param orientation new orientation style
  *
@@ -4121,7 +4118,7 @@ boolean translateMnemonic (MSG msg) {
 	Decorations shell = menuShell ();
 	if (shell.isVisible () && shell.isEnabled ()) {
 		display.lastAscii = (int)msg.wParam;
-		display.lastNull = display.lastDead = false;
+		display.lastDead = false;
 		Event event = new Event ();
 		event.detail = SWT.TRAVERSE_MNEMONIC;
 		if (setKeyState (event, SWT.Traverse, msg.wParam, msg.lParam)) {
@@ -4234,7 +4231,7 @@ boolean translateTraversal (MSG msg) {
 	display.lastKey = lastKey;
 	display.lastAscii = lastAscii;
 	display.lastVirtual = lastVirtual;
-	display.lastNull = display.lastDead = false;
+	display.lastDead = false;
 	if (!setKeyState (event, SWT.Traverse, msg.wParam, msg.lParam)) return false;
 	Shell shell = getShell ();
 	Control control = this;

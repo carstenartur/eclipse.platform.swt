@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2018 IBM Corporation and others.
+ * Copyright (c) 2000, 2022 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -274,7 +274,7 @@ public Image(Device device, Image srcImage, int flag) {
 	boolean hasAlpha = format == Cairo.CAIRO_FORMAT_ARGB32;
 	surface = Cairo.cairo_image_surface_create(format, width, height);
 	if (surface == 0) SWT.error(SWT.ERROR_NO_HANDLES);
-	if (DPIUtil.useCairoAutoScale()) {
+	if (DPIUtil.getDeviceZoom() != currentDeviceZoom && DPIUtil.useCairoAutoScale()) {
 		double scaleFactor = DPIUtil.getDeviceZoom() / 100f;
 		Cairo.cairo_surface_set_device_scale(surface, scaleFactor, scaleFactor);
 	}
@@ -779,8 +779,8 @@ void createFromPixbuf(int type, long pixbuf) {
 
 	// Scale dimensions of Image object to 100% scale factor
 	double scaleFactor = DPIUtil.getDeviceZoom() / 100f;
-	this.width = pixbufWidth / (int) scaleFactor;
-	this.height = pixbufHeight / (int) scaleFactor;
+	this.width = (int) Math.round(pixbufWidth / scaleFactor);
+	this.height = (int) Math.round(pixbufHeight / scaleFactor);
 
 	int stride = GDK.gdk_pixbuf_get_rowstride(pixbuf);
 	long pixels = GDK.gdk_pixbuf_get_pixels(pixbuf);
@@ -937,7 +937,7 @@ public boolean equals (Object object) {
  * color of the widget to paint the transparent pixels of the image.
  * Use this method to check which color will be used in these cases
  * in place of transparency. This value may be set with setBackground().
- * <p>
+ * </p>
  *
  * @return the background color of the image, or null if there is no transparency in the image
  *
@@ -1259,8 +1259,8 @@ void init(ImageData image) {
 
 	// Scale dimensions of Image object to 100% scale factor
 	double scaleFactor = DPIUtil.getDeviceZoom() / 100f;
-	this.width = imageDataWidth / (int) scaleFactor;
-	this.height = imageDataHeight / (int) scaleFactor;
+	this.width = (int) Math.round(imageDataWidth / scaleFactor);
+	this.height = (int) Math.round(imageDataHeight / scaleFactor);
 
 	boolean hasAlpha = image.transparentPixel != -1 || image.alpha != -1 || image.maskData != null || image.alphaData != null;
 	int format = hasAlpha ? Cairo.CAIRO_FORMAT_ARGB32 : Cairo.CAIRO_FORMAT_RGB24;

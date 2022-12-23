@@ -430,7 +430,7 @@ RECT getBounds (int index, boolean getText, boolean getImage, boolean fullText, 
 	long hwndHeader = parent.hwndHeader;
 	if (hwndHeader != 0) {
 		columnCount = parent.columnCount;
-		firstColumn = index == OS.SendMessage (hwndHeader, OS.HDM_ORDERTOINDEX, 0, 0);
+		firstColumn = index == parent.getFirstColumnIndex();
 	}
 	RECT rect = new RECT ();
 	if (firstColumn) {
@@ -449,12 +449,14 @@ RECT getBounds (int index, boolean getText, boolean getImage, boolean fullText, 
 		}
 		if (fullText || fullImage || clip) {
 			if (hwndHeader != 0) {
-				RECT headerRect = new RECT ();
+				RECT headerRect;
 				if (columnCount != 0) {
-					if (OS.SendMessage (hwndHeader, OS.HDM_GETITEMRECT, index, headerRect) == 0) {
-						return new RECT ();
+					headerRect = parent.getColumnRect(index);
+					if (headerRect == null) {
+						return new RECT();
 					}
 				} else {
+					headerRect = new RECT ();
 					headerRect.right = parent.scrollWidth;
 					if (headerRect.right == 0) headerRect = rect;
 				}
@@ -467,8 +469,8 @@ RECT getBounds (int index, boolean getText, boolean getImage, boolean fullText, 
 		}
 	} else {
 		if (!(0 <= index && index < columnCount)) return new RECT ();
-		RECT headerRect = new RECT ();
-		if (OS.SendMessage (hwndHeader, OS.HDM_GETITEMRECT, index, headerRect) == 0) {
+		RECT headerRect = parent.getColumnRect(index);
+		if (headerRect == null) {
 			return new RECT ();
 		}
 		if (!OS.TreeView_GetItemRect (hwnd, handle, rect, false)) {
@@ -561,7 +563,6 @@ public boolean getChecked () {
 /**
  * Returns <code>true</code> if the receiver is expanded,
  * and false otherwise.
- * <p>
  *
  * @return the expanded state
  *
@@ -1030,7 +1031,7 @@ public void removeAll () {
 	/**
 	 * Performance optimization, switch off redraw for high amount of elements
 	 */
-	boolean disableRedraw = parent.itemCount > 30;
+	boolean disableRedraw = parent.cachedItemCount > 30;
 	if (disableRedraw) {
 		parent.setRedraw(false);
 	}
@@ -1132,7 +1133,6 @@ public void setBackground (int index, Color color) {
 
 /**
  * Sets the checked state of the receiver.
- * <p>
  *
  * @param checked the new checked state
  *
@@ -1179,7 +1179,6 @@ public void setChecked (boolean checked) {
 
 /**
  * Sets the expanded state of the receiver.
- * <p>
  *
  * @param expanded the new expanded state
  *

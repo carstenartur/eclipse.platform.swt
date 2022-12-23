@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2019 IBM Corporation and others.
+ * Copyright (c) 2000, 2022 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -10,11 +10,13 @@
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
+ *     Christoph Läubrich - Issue #64 - Integration with java.util.concurrent framework
  *******************************************************************************/
 package org.eclipse.swt.widgets;
 
 import java.lang.Runtime.*;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.function.*;
 
 import org.eclipse.swt.*;
@@ -102,7 +104,7 @@ import org.eclipse.swt.internal.cocoa.*;
  * @noextend This class is not intended to be subclassed by clients.
  */
 @SuppressWarnings({"rawtypes", "unchecked"})
-public class Display extends Device {
+public class Display extends Device implements Executor {
 
 	static byte[] types = {'*','\0'};
 	static int size = C.PTR_SIZEOF, align = C.PTR_SIZEOF == 4 ? 2 : 3;
@@ -614,6 +616,49 @@ public void asyncExec (Runnable runnable) {
 }
 
 /**
+ * Executes the given runnable in the user-interface thread of this Display.
+ * <ul>
+ * <li>If the calling thread is the user-interface thread of this display it is
+ * executed immediately and the method returns after the command has run, as with
+ * the method {@link Display#syncExec(Runnable)}.</li>
+ * <li>In all other cases the <code>run()</code> method of the runnable is
+ * asynchronously executed as with the method
+ * {@link Display#asyncExec(Runnable)} at the next reasonable opportunity. The
+ * caller of this method continues to run in parallel, and is not notified when
+ * the runnable has completed.</li>
+ * </ul>
+ * <p>
+ * This can be used in cases where one want to execute some piece of code that
+ * should be guaranteed to run in the user-interface thread regardless of the
+ * current thread.
+ * </p>
+ *
+ * <p>
+ * Note that at the time the runnable is invoked, widgets that have the receiver
+ * as their display may have been disposed. Therefore, it is advised to check
+ * for this case inside the runnable before accessing the widget.
+ * </p>
+ *
+ * @param runnable the runnable to execute in the user-interface thread, never
+ *                 <code>null</code>
+ * @throws RejectedExecutionException if this task cannot be accepted for
+ *                                    execution
+ * @throws NullPointerException       if runnable is null
+ */
+@Override
+public void execute(Runnable runnable) {
+	Objects.requireNonNull(runnable);
+	if (isDisposed()) {
+		throw new RejectedExecutionException(new SWTException (SWT.ERROR_WIDGET_DISPOSED, null));
+	}
+	if (thread == Thread.currentThread()) {
+		syncExec(runnable);
+	} else {
+		asyncExec(runnable);
+	}
+}
+
+/**
  * Causes the system hardware to emit a short sound
  * (if it supports this capability).
  *
@@ -877,33 +922,6 @@ static private void configureSystemOptions () {
 	 */
 	if (OS.isBigSurOrLater ()) {
 		configureSystemOption ("NSViewUsesAutomaticLayerBackingStores", false);
-	}
-
-	/*
-	 * Bug 578171: There is new code in macOS 12 that remembers which
-	 * Shell was active before menu popup was shown and tries to
-	 * re-activate after menu popup is closed. Unfortunately there is a
-	 * bug in this code: if window list changes, it activates a wrong
-	 * Shell.
-	 *
-	 * This is a bug on its own, but worse yet, this causes a JVM crash
-	 * because activating a new Shell causes menu bar to reset its
-	 * internal data, which is unexpected to the macOS's menu tracking
-	 * loop.
-	 *
-	 * Both bugs are bugs of macOS itself. The workaround is to disable
-	 * the new macOS 12 behavior.
-	 *
-	 * The condition should be for (macOS >= 12), but it's not possible
-	 * to reliably distinguish 11 from 12, see comment for OS.VERSION.
-	 * That's fine: older macOS don't know this setting and will not
-	 * check for it anyway.
-	 */
-	if (OS.isBigSurOrLater ()) {
-		// The name of the option is misleading. What it really means
-		// is whether '-[NSMenuWindowManagerWindow _setVisible:]' shall
-		// save/restore current key window or not.
-		configureSystemOption ("NSMenuWindowManagerWindowShouldSetVisible", true);
 	}
 }
 
@@ -3416,6 +3434,17 @@ boolean isValidThread () {
 	return thread == Thread.currentThread ();
 }
 
+static long getCurrentKeyLayout () {
+	long currentKbd = OS.TISCopyCurrentKeyboardInputSource ();
+	long keyLayoutData = OS.TISGetInputSourceProperty (currentKbd, OS.kTISPropertyUnicodeKeyLayoutData());
+	if (currentKbd != 0) OS.CFRelease (currentKbd);
+	if (keyLayoutData == 0) return 0;
+	long keyLayout = OS.CFDataGetBytePtr (keyLayoutData);
+	if (keyLayout == 0) return 0;
+	if (OS.CFDataGetLength (keyLayoutData) == 0) return 0;
+	return keyLayout;
+}
+
 /**
  * Generate a low level system event.
  *
@@ -3494,21 +3523,15 @@ public boolean post(Event event) {
 			case SWT.KeyUp: {
 				short vKey = (short)Display.untranslateKey (event.keyCode);
 				if (vKey == 0) {
-					long uchrPtr = 0;
-					long currentKbd = OS.TISCopyCurrentKeyboardInputSource();
-					long uchrCFData = OS.TISGetInputSourceProperty(currentKbd, OS.kTISPropertyUnicodeKeyLayoutData());
-
-					if (uchrCFData == 0) return false;
-					uchrPtr = OS.CFDataGetBytePtr(uchrCFData);
-					if (uchrPtr == 0) return false;
-					if (OS.CFDataGetLength(uchrCFData) == 0) return false;
+					long keyLayout = getCurrentKeyLayout ();
+					if (keyLayout == 0) return false;
 					int maxStringLength = 256;
 					vKey = -1;
 					char [] output = new char [maxStringLength];
 					long [] actualStringLength = new long [1];
 					for (short i = 0 ; i <= 0x7F ; i++) {
 						deadKeyState[0] = 0;
-						OS.UCKeyTranslate (uchrPtr, i, (short)(type == SWT.KeyDown ? OS.kUCKeyActionDown : OS.kUCKeyActionUp), 0, OS.LMGetKbdType(), 0, deadKeyState, maxStringLength, actualStringLength, output);
+						OS.UCKeyTranslate (keyLayout, i, type == SWT.KeyDown ? OS.kUCKeyActionDown : OS.kUCKeyActionUp, 0, OS.LMGetKbdType(), 0, deadKeyState, maxStringLength, actualStringLength, output);
 						if (output[0] == event.character) {
 							vKey = i;
 							break;
@@ -3517,7 +3540,7 @@ public boolean post(Event event) {
 					if (vKey == -1) {
 						for (short i = 0 ; i <= 0x7F ; i++) {
 							deadKeyState[0] = 0;
-							OS.UCKeyTranslate (uchrPtr, i, (short)(type == SWT.KeyDown ? OS.kUCKeyActionDown : OS.kUCKeyActionUp), (OS.shiftKey >> 8) & 0xFF, OS.LMGetKbdType(), 0, deadKeyState, maxStringLength, actualStringLength, output);
+							OS.UCKeyTranslate (keyLayout, i, type == SWT.KeyDown ? OS.kUCKeyActionDown : OS.kUCKeyActionUp, (OS.shiftKey >> 8) & 0xFF, OS.LMGetKbdType(), 0, deadKeyState, maxStringLength, actualStringLength, output);
 							if (output[0] == event.character) {
 								vKey = i;
 								break;
@@ -4582,6 +4605,25 @@ boolean runTimers () {
 	return result;
 }
 
+private void sendJDKInternalEvent(int eventType) {
+	sendJDKInternalEvent(eventType, 0);
+}
+/** does sent event with JDK time**/
+private void sendJDKInternalEvent(int eventType, int detail) {
+	if (eventTable == null || !eventTable.hooks (eventType)) {
+		return;
+	}
+	Event event = new Event ();
+	event.detail = detail;
+	event.display = this;
+	event.type = eventType;
+	// time is set for debugging purpose only:
+	event.time = (int) (System.nanoTime() / 1000_000L);
+	if (!filterEvent (event)) {
+		sendEvent (eventTable, event);
+	}
+}
+
 void sendEvent (int eventType, Event event) {
 	if (eventTable == null && filterTable == null) {
 		return;
@@ -4616,11 +4658,7 @@ void sendPreEvent (int eventType) {
 	if (eventType != SWT.PreEvent && eventType != SWT.PostEvent
 			&& eventType != SWT.PreExternalEventDispatch
 			&& eventType != SWT.PostExternalEventDispatch) {
-		if (eventTable != null && eventTable.hooks (SWT.PreEvent)) {
-			Event event = new Event ();
-			event.detail = eventType;
-			sendEvent (SWT.PreEvent, event);
-		}
+		sendJDKInternalEvent (SWT.PreEvent, eventType);
 	}
 }
 
@@ -4628,11 +4666,7 @@ void sendPostEvent (int eventType) {
 	if (eventType != SWT.PreEvent && eventType != SWT.PostEvent
 			&& eventType != SWT.PreExternalEventDispatch
 			&& eventType != SWT.PostExternalEventDispatch) {
-		if (eventTable != null && eventTable.hooks (SWT.PostEvent)) {
-			Event event = new Event ();
-			event.detail = eventType;
-			sendEvent (SWT.PostEvent, event);
-		}
+		sendJDKInternalEvent (SWT.PostEvent, eventType);
 	}
 }
 
@@ -4642,9 +4676,7 @@ void sendPostEvent (int eventType) {
  * @noreference This method is not intended to be referenced by clients.
  */
 public void sendPreExternalEventDispatchEvent () {
-	if (eventTable != null && eventTable.hooks (SWT.PreExternalEventDispatch)) {
-		sendEvent (SWT.PreExternalEventDispatch, null);
-	}
+	sendJDKInternalEvent (SWT.PreExternalEventDispatch);
 }
 
 /**
@@ -4653,9 +4685,7 @@ public void sendPreExternalEventDispatchEvent () {
  * @noreference This method is not intended to be referenced by clients.
  */
 public void sendPostExternalEventDispatchEvent () {
-	if (eventTable != null && eventTable.hooks (SWT.PostExternalEventDispatch)) {
-		sendEvent (SWT.PostExternalEventDispatch, null);
-	}
+	sendJDKInternalEvent (SWT.PostExternalEventDispatch);
 }
 
 static NSString getApplicationName() {
@@ -4714,10 +4744,12 @@ public static String getAppVersion () {
  * to any value other than "SWT" (case insensitive),
  * it is used to set the application user model ID
  * which is used by the OS for taskbar grouping.
- * @see <a href="http://msdn.microsoft.com/en-us/library/windows/desktop/dd378459%28v=vs.85%29.aspx#HOW">AppUserModelID (Windows)</a>
- * </p><p>
+ * </p>
+ * <p>
  * Specifying <code>null</code> for the name clears it.
  * </p>
+ *
+ * @see <a href="http://msdn.microsoft.com/en-us/library/windows/desktop/dd378459%28v=vs.85%29.aspx#HOW">AppUserModelID (Windows)</a>
  *
  * @param name the new app name or <code>null</code>
  */
@@ -4950,6 +4982,13 @@ void setDeviceZoom() {
 	DPIUtil.setDeviceZoom (getDeviceZoom());
 }
 
+static void cancelRootMenuTracking () {
+	long rootMenu = OS.AcquireRootMenu ();
+	if (rootMenu == 0) return; // Extra safety, not sure if it can happen
+	OS.CancelMenuTracking (rootMenu, true, 0);
+	OS.CFRelease (rootMenu);
+}
+
 void setMenuBar (Menu menu) {
 	// If passed a null menu bar don't clear out the menu bar, but switch back to the
 	// application menu bar instead, if it exists.  If the app menu bar is already active
@@ -4965,7 +5004,7 @@ void setMenuBar (Menu menu) {
 	* event loop. The fix is to use CancelMenuTracking() instead.
 	*/
 //	menubar.cancelTracking();
-	OS.CancelMenuTracking (OS.AcquireRootMenu (), true, 0);
+	cancelRootMenuTracking ();
 	long count = menubar.numberOfItems();
 	while (count > 1) {
 		menubar.removeItemAtIndex(count - 1);

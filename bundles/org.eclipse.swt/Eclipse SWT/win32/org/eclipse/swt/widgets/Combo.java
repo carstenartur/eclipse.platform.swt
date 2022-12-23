@@ -1943,25 +1943,8 @@ public void select (int index) {
 	int count = (int)OS.SendMessage (handle, OS.CB_GETCOUNT, 0, 0);
 	if (0 <= index && index < count) {
 		int selection = (int)OS.SendMessage (handle, OS.CB_GETCURSEL, 0, 0);
-		//corner case for single elements combo boxes for Bug 222752
-		if (OS.WIN32_VERSION < OS.VERSION (6, 2) && getListVisible() && (style & SWT.READ_ONLY) != 0 && count==1 && selection == OS.CB_ERR) {
-			OS.SendMessage (handle, OS.WM_KEYDOWN, OS.VK_DOWN, 0);
-			sendEvent (SWT.Modify);
-			return;
-		}
 		int code = (int)OS.SendMessage (handle, OS.CB_SETCURSEL, index, 0);
 		if (code != OS.CB_ERR && code != selection) {
-			//Workaround for Bug 222752
-			if (OS.WIN32_VERSION < OS.VERSION (6, 2) && getListVisible() && (style & SWT.READ_ONLY) != 0) {
-				int firstKey = OS.VK_UP;
-				int secondKey = OS.VK_DOWN;
-				if (index == 0) {
-					firstKey = OS.VK_DOWN;
-					secondKey = OS.VK_UP;
-				}
-				OS.SendMessage (handle, OS.WM_KEYDOWN, firstKey, 0);
-				OS.SendMessage (handle, OS.WM_KEYDOWN, secondKey, 0);
-			}
 			sendEvent (SWT.Modify);
 			// widget could be disposed at this point
 		}
@@ -2145,7 +2128,6 @@ public void setItems (String... items) {
 /**
  * Sets the orientation of the receiver, which must be one
  * of the constants <code>SWT.LEFT_TO_RIGHT</code> or <code>SWT.RIGHT_TO_LEFT</code>.
- * <p>
  *
  * @param orientation new orientation style
  *
@@ -3290,7 +3272,7 @@ LRESULT wmIMEChar (long hwnd, long wParam, long lParam) {
 	Display display = this.display;
 	display.lastKey = 0;
 	display.lastAscii = (int)wParam;
-	display.lastVirtual = display.lastNull = display.lastDead = false;
+	display.lastVirtual = display.lastDead = false;
 	if (!sendKeyEvent (SWT.KeyDown, OS.WM_IME_CHAR, wParam, lParam)) {
 		return LRESULT.ZERO;
 	}

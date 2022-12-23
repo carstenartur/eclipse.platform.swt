@@ -14,12 +14,12 @@
   <parent>
     <artifactId>eclipse.platform.swt.localbuild</artifactId>
     <groupId>eclipse.platform.swt</groupId>
-    <version>4.25.0-SNAPSHOT</version>
+    <version>4.27.0-SNAPSHOT</version>
     <relativePath>../../local-build/local-build-parent/</relativePath>
   </parent>
   <groupId>org.eclipse.swt</groupId>
   <artifactId>org.eclipse.swt.tests</artifactId>
-  <version>3.106.1800-SNAPSHOT</version>
+  <version>3.106.2000-SNAPSHOT</version>
   <packaging>eclipse-test-plugin</packaging>
   <properties>
     <code.ignoredWarnings>${tests.ignoredWarnings}</code.ignoredWarnings>
@@ -49,6 +49,7 @@
               <systemPropertyVariables>
                 <user.home>${project.build.directory}</user.home> <!-- used as cache directory for SWT native libraries -->
                 <org.eclipse.swt.internal.gtk.enableStrictChecks>true</org.eclipse.swt.internal.gtk.enableStrictChecks> <!-- see bug 532632 -->
+                <swt.autoScale>quarter</swt.autoScale>
               </systemPropertyVariables>
               <!-- Trim does not only remove the entries before entering the test method but
                    also every entry which is not part of the test class. See bug 558848 for example. -->

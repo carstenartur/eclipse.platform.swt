@@ -558,7 +558,13 @@ public void test_LocationListener_ProgressListener_cancledLoad () {
 	// For stability, wait 1000 ms.
 	waitForMilliseconds(1000);
 
-	boolean passed = locationChanging.get() && !unexpectedLocationChanged.get() && !unexpectedProgressCompleted.get();
+	boolean passed = false;
+	if (SwtTestUtil.isCocoa) {
+		// On Cocoa, while setting html text, setting doit=false in location changing event doesn't cancel loading the text.
+		passed = locationChanging.get();
+	} else {
+		passed = locationChanging.get() && !unexpectedLocationChanged.get() && !unexpectedProgressCompleted.get();
+	}
 	String errMsg = "\nUnexpected event fired. \n"
 			+ "LocationChanging (should be true): " + locationChanging.get() + "\n"
 			+ "LocationChanged unexpectedly (should be false): " + unexpectedLocationChanged.get() + "\n"
@@ -592,11 +598,13 @@ public void test_LocationListener_ProgressListener_noExtraEvents() {
 	shell.open();
 	browser.setText("Hello world");
 
+	// Wait for changed and completed events that are mandatory
+	waitForPassCondition(() -> changedCount.get() == 1 && completedCount.get() == 1);
 	// We have to wait to check that no extra events are fired.
 	// On Gtk, Quad Core, pcie this takes 80 ms. ~600ms for stability.
 	waitForMilliseconds(600);
 	boolean passed = changedCount.get() == 1 && completedCount.get() == 1;
-	String errorMsg = "\nIncorrect event sequences. Events missing or too many fired:"
+	String errorMsg = "\nIncorrect event sequences. Too many fired:"
 			+ "\nExpected one of each, but received:"
 			+ "\nChanged count: " + changedCount.get()
 			+ "\nCompleted count: " + completedCount.get();

@@ -968,7 +968,6 @@ public boolean getEnabled () {
 /**
  * Returns <code>true</code> if the receiver is currently
  * in fullscreen state, and false otherwise.
- * <p>
  *
  * @return the fullscreen state
  *
@@ -1169,7 +1168,7 @@ public Shell getShell () {
 /**
  * Returns an array containing all shells which are
  * descendants of the receiver.
- * <p>
+ *
  * @return the dialog shells
  *
  * @exception SWTException <ul>
@@ -1207,7 +1206,6 @@ public Shell [] getShells () {
  * trim. This will return <code>null</code> if the platform does not support tool bars that
  * are not part of the content area of the shell, or if the Shell's style does not support
  * having a tool bar.
- * <p>
  *
  * @return a ToolBar object representing the Shell's tool bar, or <code>null</code>.
  *
@@ -2335,25 +2333,6 @@ LRESULT WM_DESTROY (long wParam, long lParam) {
 	if ((bits & OS.WS_CHILD) != 0) {
 		releaseParent ();
 		release (false);
-	}
-	return result;
-}
-
-@Override
-LRESULT WM_ERASEBKGND (long wParam, long lParam) {
-	LRESULT result = super.WM_ERASEBKGND (wParam, lParam);
-	if (result != null) return result;
-	/*
-	* Feature in Windows.  When a shell is resized by dragging
-	* the resize handles, Windows temporarily fills in black
-	* rectangles where the new contents of the shell should
-	* draw.  The fix is to always draw the background of shells.
-	*
-	* NOTE: This only happens on Vista.
-	*/
-	if (OS.WIN32_VERSION == OS.VERSION (6, 0)) {
-		drawBackground (wParam);
-		return LRESULT.ONE;
 	}
 	return result;
 }
