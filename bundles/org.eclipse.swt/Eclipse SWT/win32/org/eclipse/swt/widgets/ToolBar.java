@@ -735,6 +735,54 @@ void layoutItems () {
 			}
 		}
 	}
+	
+	/*
+	 * Feature in Windows. When a tool bar is not flagged TBSTYLE_LIST already (SWT.RIGHT)
+	 * and contains both text and images, but not text + image in a single item,
+	 * Window leaves too much padding around the button.
+	 * This affects every button in the tool bar and makes the preferred height too big.
+	 * The fix is to set the TBSTYLE_LIST, so that Windows can condense the unused space.
+	 */
+	if (OS.IsAppThemed()) {
+		if ((style & SWT.RIGHT) == 0 && (style & SWT.HORIZONTAL) != 0) {
+			boolean hasText = false, hasImage = false, hasTextAndImageInSingleItem = false;
+			for (ToolItem item : items) {
+				if (item != null) {
+					boolean itemHasText = false, itemHasImage = false;
+					itemHasText = item.text.length() != 0;
+					itemHasImage = item.image != null;
+					if (!hasText) {
+						hasText = itemHasText;
+					}
+					if (!hasImage) {
+						hasImage = itemHasImage;
+					}
+					if (itemHasText && itemHasImage) {
+						hasTextAndImageInSingleItem = true;
+						break;
+					}
+				}
+			}
+			int oldBits = OS.GetWindowLong(handle, OS.GWL_STYLE), newBits = oldBits;
+			if (hasText && hasImage && !hasTextAndImageInSingleItem) {
+				newBits |= OS.TBSTYLE_LIST;
+			} else {
+				newBits &= ~OS.TBSTYLE_LIST;
+			}
+			if (newBits != oldBits) {
+				setDropDownItems(false);
+				OS.SetWindowLong(handle, OS.GWL_STYLE, newBits);
+				/*
+				 * Feature in Windows. For some reason, when the style is changed to
+				 * TBSTYLE_LIST, Windows does not lay out the tool items. The fix is to use
+				 * WM_SETFONT to force the tool bar to redraw and lay out.
+				 */
+				long hFont = OS.SendMessage(handle, OS.WM_GETFONT, 0, 0);
+				OS.SendMessage(handle, OS.WM_SETFONT, hFont, 0);
+				setDropDownItems(true);
+			}
+		}
+	}
 
 	if ((style & SWT.WRAP) != 0) {
 		OS.SendMessage (handle, OS.TB_AUTOSIZE, 0, 0);
