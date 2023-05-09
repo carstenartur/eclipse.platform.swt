@@ -14,6 +14,10 @@
 
 # Makefile for creating SWT libraries for Linux GTK
 
+# assumes these variables are set in the environment from which make is run
+#	SWT_JAVA_HOME
+#	OUTPUT_DIR
+
 # SWT debug flags for various SWT components.
 #SWT_WEBKIT_DEBUG = -DWEBKIT_DEBUG
 
@@ -73,9 +77,6 @@ ATKLIBS = `pkg-config --libs-only-L atk` -latk-1.0
 
 GLXLIBS = -lGL -lGLU -lm
 
-# Uncomment for Native Stats tool
-#NATIVE_STATS = -DNATIVE_STATS
-
 WEBKITLIBS = `pkg-config --libs-only-l gio-2.0`
 WEBKITCFLAGS = `pkg-config --cflags gio-2.0`
 
@@ -100,12 +101,11 @@ GLX_OBJECTS = swt.o glx.o glx_structs.o glx_stats.o
 
 CFLAGS := $(CFLAGS) \
 		-DSWT_VERSION=$(SWT_VERSION) \
-		$(NATIVE_STATS) \
 		$(SWT_DEBUG) \
 		$(SWT_WEBKIT_DEBUG) \
 		-DLINUX -DGTK \
-		-I$(JAVA_HOME)/include \
-		-I$(JAVA_HOME)/include/linux \
+		-I$(SWT_JAVA_HOME)/include \
+		-I$(SWT_JAVA_HOME)/include/linux \
 		${SWT_PTR_CFLAGS}
 LFLAGS = -shared -fPIC ${SWT_LFLAGS}
 
